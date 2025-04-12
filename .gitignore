@@ -1,0 +1,3 @@
+vfsshim.o
+vfsshim.so
+sqlite-*/
