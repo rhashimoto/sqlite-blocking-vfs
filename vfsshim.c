@@ -1,3 +1,4 @@
+/* Originally based on ext/misc/vfsstat.c */
 #include <sqlite3ext.h>
 SQLITE_EXTENSION_INIT1
 
@@ -65,13 +66,14 @@ static int shimCurrentTime(sqlite3_vfs*, double*);
 static int shimGetLastError(sqlite3_vfs*, int, char *);
 static int shimCurrentTimeInt64(sqlite3_vfs*, sqlite3_int64*);
 
+#define QUOTE(x) #x
 static ShimVfs shim_vfs = {
   {
     2,                            /* iVersion */
     0,                            /* szOsFile (set by register_shim()) */
     1024,                         /* mxPathname */
     0,                            /* pNext */
-    "vfsshim",                    /* zName */
+    QUOTE(SHIM_NAME),             /* zName */
     0,                            /* pAppData */
     shimOpen,                     /* xOpen */
     shimDelete,                   /* xDelete */
@@ -423,7 +425,10 @@ static int shimCurrentTimeInt64(sqlite3_vfs *pVfs, sqlite3_int64 *p){
 ** Register the new VFS.  Make arrangement to register the virtual table
 ** for each new database connection.
 */
-int sqlite3_vfsshim_init(
+#define DECLARE_INNER(SHIM_NAME) sqlite3_ ## SHIM_NAME ## _init
+#define DECLARE(SHIM_NAME) DECLARE_INNER(SHIM_NAME)
+
+int DECLARE(SHIM_NAME)(
   sqlite3 *db, 
   char **pzErrMsg, 
   const sqlite3_api_routines *pApi
