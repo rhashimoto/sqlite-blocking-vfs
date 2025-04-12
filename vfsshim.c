@@ -2,21 +2,12 @@
 #include <sqlite3ext.h>
 SQLITE_EXTENSION_INIT1
 
-#include <string.h>
-#include <stdlib.h>
-#include <assert.h>
-
-/*
-** Forward declaration of objects used by this utility
-*/
-typedef struct ShimVfs ShimVfs;
-typedef struct ShimFile ShimFile;
-
 /* An instance of the VFS */
 struct ShimVfs {
   sqlite3_vfs base;               /* VFS methods */
   sqlite3_vfs *pVfs;              /* Parent VFS */
 };
+typedef struct ShimVfs ShimVfs;
 
 /* An open file */
 struct ShimFile {
@@ -24,12 +15,12 @@ struct ShimFile {
   sqlite3_file *pReal;            /* Underlying file handle */
   int openFlags;
 };
+typedef struct ShimFile ShimFile;
 
+/* Get pointer to underlying VFS */
 #define REALVFS(p) (((ShimVfs*)(p))->pVfs)
 
-/*
-** Methods for ShimFile
-*/
+/* Methods for ShimFile */
 static int shimClose(sqlite3_file*);
 static int shimRead(sqlite3_file*, void*, int iAmt, sqlite3_int64 iOfst);
 static int shimWrite(sqlite3_file*,const void*,int iAmt, sqlite3_int64 iOfst);
@@ -49,9 +40,7 @@ static int shimShmUnmap(sqlite3_file*, int deleteFlag);
 static int shimFetch(sqlite3_file*, sqlite3_int64 iOfst, int iAmt, void **pp);
 static int shimUnfetch(sqlite3_file*, sqlite3_int64 iOfst, void *p);
 
-/*
-** Methods for ShimVfs
-*/
+/* Methods for ShimVfs */
 static int shimOpen(sqlite3_vfs*, const char *, sqlite3_file*, int , int *);
 static int shimDelete(sqlite3_vfs*, const char *zName, int syncDir);
 static int shimAccess(sqlite3_vfs*, const char *zName, int flags, int *);
@@ -116,9 +105,6 @@ static const sqlite3_io_methods shim_io_methods = {
 
 
 
-/*
-** Close an shim-file.
-*/
 static int shimClose(sqlite3_file *pFile){
   ShimFile *p = (ShimFile *)pFile;
   int rc = SQLITE_OK;
@@ -130,9 +116,6 @@ static int shimClose(sqlite3_file *pFile){
 }
 
 
-/*
-** Read data from an shim-file.
-*/
 static int shimRead(
   sqlite3_file *pFile, 
   void *zBuf, 
@@ -146,9 +129,6 @@ static int shimRead(
   return rc;
 }
 
-/*
-** Write data to an shim-file.
-*/
 static int shimWrite(
   sqlite3_file *pFile,
   const void *z,
@@ -162,9 +142,6 @@ static int shimWrite(
   return rc;
 }
 
-/*
-** Truncate an shim-file.
-*/
 static int shimTruncate(sqlite3_file *pFile, sqlite_int64 size){
   int rc;
   ShimFile *p = (ShimFile *)pFile;
@@ -172,9 +149,6 @@ static int shimTruncate(sqlite3_file *pFile, sqlite_int64 size){
   return rc;
 }
 
-/*
-** Sync an shim-file.
-*/
 static int shimSync(sqlite3_file *pFile, int flags){
   int rc;
   ShimFile *p = (ShimFile *)pFile;
@@ -182,9 +156,6 @@ static int shimSync(sqlite3_file *pFile, int flags){
   return rc;
 }
 
-/*
-** Return the current file-size of an shim-file.
-*/
 static int shimFileSize(sqlite3_file *pFile, sqlite_int64 *pSize){
   int rc;
   ShimFile *p = (ShimFile *)pFile;
@@ -192,9 +163,6 @@ static int shimFileSize(sqlite3_file *pFile, sqlite_int64 *pSize){
   return rc;
 }
 
-/*
-** Lock an shim-file.
-*/
 static int shimLock(sqlite3_file *pFile, int eLock){
   int rc;
   ShimFile *p = (ShimFile *)pFile;
@@ -202,9 +170,6 @@ static int shimLock(sqlite3_file *pFile, int eLock){
   return rc;
 }
 
-/*
-** Unlock an shim-file.
-*/
 static int shimUnlock(sqlite3_file *pFile, int eLock){
   int rc;
   ShimFile *p = (ShimFile *)pFile;
@@ -212,9 +177,6 @@ static int shimUnlock(sqlite3_file *pFile, int eLock){
   return rc;
 }
 
-/*
-** Check if another file-handle holds a RESERVED lock on an shim-file.
-*/
 static int shimCheckReservedLock(sqlite3_file *pFile, int *pResOut){
   int rc;
   ShimFile *p = (ShimFile *)pFile;
@@ -222,9 +184,6 @@ static int shimCheckReservedLock(sqlite3_file *pFile, int *pResOut){
   return rc;
 }
 
-/*
-** File control method. For custom operations on an shim-file.
-*/
 static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
   ShimFile *p = (ShimFile *)pFile;
   int rc;
@@ -232,9 +191,6 @@ static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
   return rc;
 }
 
-/*
-** Return the sector-size in bytes for an shim-file.
-*/
 static int shimSectorSize(sqlite3_file *pFile){
   int rc;
   ShimFile *p = (ShimFile *)pFile;
@@ -242,9 +198,6 @@ static int shimSectorSize(sqlite3_file *pFile){
   return rc;
 }
 
-/*
-** Return the device characteristic flags supported by an shim-file.
-*/
 static int shimDeviceCharacteristics(sqlite3_file *pFile){
   int rc;
   ShimFile *p = (ShimFile *)pFile;
@@ -252,7 +205,6 @@ static int shimDeviceCharacteristics(sqlite3_file *pFile){
   return rc;
 }
 
-/* Create a shared memory file mapping */
 static int shimShmMap(
   sqlite3_file *pFile,
   int iPg,
@@ -264,25 +216,21 @@ static int shimShmMap(
   return p->pReal->pMethods->xShmMap(p->pReal, iPg, pgsz, bExtend, pp);
 }
 
-/* Perform locking on a shared-memory segment */
 static int shimShmLock(sqlite3_file *pFile, int offset, int n, int flags){
   ShimFile *p = (ShimFile *)pFile;
   return p->pReal->pMethods->xShmLock(p->pReal, offset, n, flags);
 }
 
-/* Memory barrier operation on shared memory */
 static void shimShmBarrier(sqlite3_file *pFile){
   ShimFile *p = (ShimFile *)pFile;
   p->pReal->pMethods->xShmBarrier(p->pReal);
 }
 
-/* Unmap a shared memory segment */
 static int shimShmUnmap(sqlite3_file *pFile, int deleteFlag){
   ShimFile *p = (ShimFile *)pFile;
   return p->pReal->pMethods->xShmUnmap(p->pReal, deleteFlag);
 }
 
-/* Fetch a page of a memory-mapped file */
 static int shimFetch(
   sqlite3_file *pFile,
   sqlite3_int64 iOfst,
@@ -293,15 +241,11 @@ static int shimFetch(
   return p->pReal->pMethods->xFetch(p->pReal, iOfst, iAmt, pp);
 }
 
-/* Release a memory-mapped page */
 static int shimUnfetch(sqlite3_file *pFile, sqlite3_int64 iOfst, void *pPage){
   ShimFile *p = (ShimFile *)pFile;
   return p->pReal->pMethods->xUnfetch(p->pReal, iOfst, pPage);
 }
 
-/*
-** Open an shim file handle.
-*/
 static int shimOpen(
   sqlite3_vfs *pVfs,
   const char *zName,
@@ -319,21 +263,12 @@ static int shimOpen(
   return rc;
 }
 
-/*
-** Delete the file located at zPath. If the dirSync argument is true,
-** ensure the file-system modifications are synced to disk before
-** returning.
-*/
 static int shimDelete(sqlite3_vfs *pVfs, const char *zPath, int dirSync){
   int rc;
   rc = REALVFS(pVfs)->xDelete(REALVFS(pVfs), zPath, dirSync);
   return rc;
 }
 
-/*
-** Test for access permissions. Return true if the requested permission
-** is available, or false otherwise.
-*/
 static int shimAccess(
   sqlite3_vfs *pVfs, 
   const char *zPath, 
@@ -345,11 +280,6 @@ static int shimAccess(
   return rc;
 }
 
-/*
-** Populate buffer zOut with the full canonical pathname corresponding
-** to the pathname in zPath. zOut is guaranteed to point to a buffer
-** of at least (INST_MAX_PATHNAME+1) bytes.
-*/
 static int shimFullPathname(
   sqlite3_vfs *pVfs, 
   const char *zPath, 
@@ -359,55 +289,30 @@ static int shimFullPathname(
   return REALVFS(pVfs)->xFullPathname(REALVFS(pVfs), zPath, nOut, zOut);
 }
 
-/*
-** Open the dynamic library located at zPath and return a handle.
-*/
 static void *shimDlOpen(sqlite3_vfs *pVfs, const char *zPath){
   return REALVFS(pVfs)->xDlOpen(REALVFS(pVfs), zPath);
 }
 
-/*
-** Populate the buffer zErrMsg (size nByte bytes) with a human readable
-** utf-8 string describing the most recent error encountered associated 
-** with dynamic libraries.
-*/
 static void shimDlError(sqlite3_vfs *pVfs, int nByte, char *zErrMsg){
   REALVFS(pVfs)->xDlError(REALVFS(pVfs), nByte, zErrMsg);
 }
 
-/*
-** Return a pointer to the symbol zSymbol in the dynamic library pHandle.
-*/
 static void (*shimDlSym(sqlite3_vfs *pVfs, void *p, const char *zSym))(void){
   return REALVFS(pVfs)->xDlSym(REALVFS(pVfs), p, zSym);
 }
 
-/*
-** Close the dynamic library handle pHandle.
-*/
 static void shimDlClose(sqlite3_vfs *pVfs, void *pHandle){
   REALVFS(pVfs)->xDlClose(REALVFS(pVfs), pHandle);
 }
 
-/*
-** Populate the buffer pointed to by zBufOut with nByte bytes of 
-** random data.
-*/
 static int shimRandomness(sqlite3_vfs *pVfs, int nByte, char *zBufOut){
   return REALVFS(pVfs)->xRandomness(REALVFS(pVfs), nByte, zBufOut);
 }
 
-/*
-** Sleep for nMicro microseconds. Return the number of microseconds 
-** actually slept.
-*/
 static int shimSleep(sqlite3_vfs *pVfs, int nMicro){
   return REALVFS(pVfs)->xSleep(REALVFS(pVfs), nMicro);
 }
 
-/*
-** Return the current time as a Julian Day number in *pTimeOut.
-*/
 static int shimCurrentTime(sqlite3_vfs *pVfs, double *pTimeOut){
   return REALVFS(pVfs)->xCurrentTime(REALVFS(pVfs), pTimeOut);
 }
@@ -425,8 +330,11 @@ static int shimCurrentTimeInt64(sqlite3_vfs *pVfs, sqlite3_int64 *p){
 ** Register the new VFS.  Make arrangement to register the virtual table
 ** for each new database connection.
 */
-#define DECLARE_INNER(SHIM_NAME) sqlite3_ ## SHIM_NAME ## _init
-#define DECLARE(SHIM_NAME) DECLARE_INNER(SHIM_NAME)
+#define DECLARE_INNER(x) sqlite3_ ## x ## _init
+#define DECLARE(x) DECLARE_INNER(x)
+#ifdef _WIN32
+__declspec(dllexport)
+#endif
 
 int DECLARE(SHIM_NAME)(
   sqlite3 *db, 
