@@ -2,6 +2,30 @@
 #include <sqlite3ext.h>
 SQLITE_EXTENSION_INIT1
 
+/* Copied from os.h */
+#define NO_LOCK         0
+#define SHARED_LOCK     1
+#define RESERVED_LOCK   2
+#define PENDING_LOCK    3
+#define EXCLUSIVE_LOCK  4
+
+#define PENDING_BYTE      (0x40000000)
+#define RESERVED_BYTE     (PENDING_BYTE+1)
+#define SHARED_FIRST      (PENDING_BYTE+2)
+#define SHARED_SIZE       510
+
+/* Copied from os_unix.c */
+typedef struct unixFile unixFile;
+struct unixFile {
+  sqlite3_io_methods const *pMethod;  /* Always the first entry */
+  sqlite3_vfs *pVfs;                  /* The VFS that created this unixFile */
+  void *pInode;                       /* Info about locks on this inode */
+  int h;                              /* The file descriptor */
+  unsigned char eFileLock;            /* The type of lock held on this fd */
+
+  /* additional member declarations removed */
+};
+
 /* An instance of the VFS */
 struct ShimVfs {
   sqlite3_vfs base;               /* VFS methods */
