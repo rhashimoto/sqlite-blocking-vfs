@@ -2,6 +2,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <string.h>
+#include <strings.h>
 #include <sqlite3ext.h>
 SQLITE_EXTENSION_INIT1
 
@@ -43,8 +45,7 @@ typedef struct ShimVfs ShimVfs;
 struct ShimFile {
   sqlite3_file base;              /* IO methods */
   sqlite3_file *pReal;            /* Underlying file handle (unixFile) */
-  unsigned char writeHinted;
-  unsigned char hasHintLock;
+  unsigned char writeHint;
 };
 typedef struct ShimFile ShimFile;
 
@@ -223,31 +224,65 @@ static int shimLock(sqlite3_file *pFile, int eLock){
   switch (eLock) {
   case SHARED_LOCK:
     if (up->eFileLock == NO_LOCK) {
-      // TODO: If WRITE_HINT, acquire HINT byte.
-
+      if (p->writeHint) {
+        // A file control op has indicated that this SHARED lock is
+        // expected to be upgraded to RESERVED and EXCLUSIVE.
+        // Acquire the HINT byte.
+        if (doLock(fd, HINT_BYTE, F_WRLCK, F_SETLKW)) {
+          return SQLITE_BUSY;
+        }
+      }
+      
       // Acquire the PENDING byte.
       if (doLock(fd, PENDING_BYTE, F_RDLCK, F_SETLKW)) {
+        // Release the HINT byte on failure.
+        if (p->writeHint) {
+          doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
+          p->writeHint = 0;
+          fprintf(stderr, "write_hint cleared\n");
+        }
         return SQLITE_BUSY;
       }
 
       // Acquire the SHARED range.
       if (doLock(fd, SHARED_FIRST, F_RDLCK, F_SETLKW)) {
-        // Release the PENDING byte on failure.
+        // Release the PENDING and HINT byte on failure.
         doLock(fd, PENDING_BYTE, F_UNLCK, F_SETLK);
+        if (p->writeHint) {
+          doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
+          p->writeHint = 0;
+          fprintf(stderr, "write_hint cleared\n");
+        }
         return SQLITE_BUSY;
       }
 
       // Release the PENDING byte.
-      doLock(fd, PENDING_BYTE, F_UNLCK, F_SETLKW);
+      doLock(fd, PENDING_BYTE, F_UNLCK, F_SETLK);
     }
     break;
   case RESERVED_LOCK:
     if (up->eFileLock == SHARED_LOCK) {
-      // TODO: Poll for the HINT byte if not in possession.
+      if (!p->writeHint) {
+        // We are upgrading the SHARED lock but we don't already have the
+        // HINT byte. This shouldn't happen if SQLite provides the hint
+        // (via a new file control opcode) but it may if we are relying
+        // on a `PRAGMA write_hint`. Poll for the HINT byte.
+        if (doLock(fd, HINT_BYTE, F_WRLCK, F_SETLK)) {
+          return SQLITE_BUSY;
+        }
+        p->writeHint = 1;
+      }
       
-      
-      // Poll for the RESERVED byte.
+      // Poll for the RESERVED byte. This should succeed if all clients
+      // require an exclusive lock on the HINT byte.
       if (doLock(fd, RESERVED_BYTE, F_WRLCK, F_SETLK)) {
+        // We get here if a legacy client is holding the RESERVED byte
+        // without the HINT byte. Release the HINT byte on failure.
+        if (p->writeHint) {
+          doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
+          p->writeHint = 0;
+          fprintf(stderr, "write_hint cleared\n");
+        }
         return SQLITE_BUSY;
       }
     }
@@ -271,7 +306,6 @@ static int shimLock(sqlite3_file *pFile, int eLock){
     break;
   }
   
-  /* rc = up->pMethod->xLock(p->pReal, eLock); */
   up->eFileLock = eLock;
   return SQLITE_OK;
 }
@@ -287,24 +321,33 @@ static int shimUnlock(sqlite3_file *pFile, int eLock){
   case SHARED_LOCK:
     if (up->eFileLock > eLock) {
       // Downgrade the SHARED range to a read lock.
-      doLock(fd, SHARED_FIRST, F_RDLCK, F_SETLKW);
+      doLock(fd, SHARED_FIRST, F_RDLCK, F_SETLK);
 
       // Release all other locks.
-      doLock(fd, RESERVED_BYTE, F_UNLCK, F_SETLKW);
-      doLock(fd, PENDING_BYTE, F_UNLCK, F_SETLKW);
+      doLock(fd, RESERVED_BYTE, F_UNLCK, F_SETLK);
+      doLock(fd, PENDING_BYTE, F_UNLCK, F_SETLK);
+      if (p->writeHint) {
+        doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
+        p->writeHint = 0;
+        fprintf(stderr, "write_hint cleared\n");
+      }
     }
     break;
   case NO_LOCK:
     if (up->eFileLock > eLock) {
       // Release all locks.
-      doLock(fd, SHARED_FIRST, F_UNLCK, F_SETLKW);
-      doLock(fd, RESERVED_BYTE, F_UNLCK, F_SETLKW);
-      doLock(fd, PENDING_BYTE, F_UNLCK, F_SETLKW);
+      doLock(fd, SHARED_FIRST, F_UNLCK, F_SETLK);
+      doLock(fd, RESERVED_BYTE, F_UNLCK, F_SETLK);
+      doLock(fd, PENDING_BYTE, F_UNLCK, F_SETLK);
+      if (p->writeHint) {
+        doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
+        p->writeHint = 0;
+        fprintf(stderr, "write_hint cleared\n");
+      }
     }
     break;
   }
   
-  /* rc = up->pMethod->xUnlock(p->pReal, eLock); */
   up->eFileLock = eLock;
   return SQLITE_OK;
 }
@@ -318,8 +361,17 @@ static int shimCheckReservedLock(sqlite3_file *pFile, int *pResOut){
 
 static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
   ShimFile *p = (ShimFile *)pFile;
-  int rc;
-  rc = p->pReal->pMethods->xFileControl(p->pReal, op, pArg);
+  
+  switch (op) {
+  case SQLITE_FCNTL_PRAGMA:
+    if (!strcasecmp(((char **)pArg)[1], "write_hint")) {
+      fprintf(stderr, "write_hint set\n");
+      p->writeHint = 1;
+    }
+    break;
+  }
+  
+  int rc = p->pReal->pMethods->xFileControl(p->pReal, op, pArg);
   return rc;
 }
 
@@ -389,8 +441,7 @@ static int shimOpen(
   ShimFile *p = (ShimFile*)pFile;
 
   p->pReal = (sqlite3_file*)&p[1];
-  p->writeHinted = 0;
-  p->hasHintLock = 0;
+  p->writeHint = 0;
   rc = REALVFS(pVfs)->xOpen(REALVFS(pVfs), zName, p->pReal, flags, pOutFlags);
   pFile->pMethods = rc ? 0 : &shim_io_methods;
   return rc;
@@ -478,6 +529,10 @@ int DECLARE(SHIM_NAME)(
   SQLITE_EXTENSION_INIT2(pApi);
   shim_vfs.pVfs = sqlite3_vfs_find(0);
   if( shim_vfs.pVfs==0 ) return SQLITE_ERROR;
+  if (strcmp(shim_vfs.pVfs->zName, "unix")) {
+    fprintf(stderr, "%s: only wraps \"unix\"", QUOTE(SHIM_NAME));
+    return SQLITE_ERROR;
+  }
   shim_vfs.base.szOsFile = sizeof(ShimFile) + shim_vfs.pVfs->szOsFile;
   rc = sqlite3_vfs_register(&shim_vfs.base, 1);
   if( rc==SQLITE_OK ) rc = SQLITE_OK_LOAD_PERMANENTLY;
