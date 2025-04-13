@@ -7,7 +7,7 @@ LDFLAGS= -shared -Wl,-soname=${TARGET_LIB}
 default: ${TARGET_LIB}
 
 clean:
-	rm -f vfsshim.o vfsshim.so
+	rm -f vfsshim.o ${TARGET_LIB}
 
 ${TARGET_LIB}: vfsshim.o
 	$(CC) ${LDFLAGS} -o $@ $<
