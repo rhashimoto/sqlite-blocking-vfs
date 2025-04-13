@@ -19,8 +19,10 @@ SQLITE_EXTENSION_INIT1
 #define SHARED_FIRST      (PENDING_BYTE+2)
 #define SHARED_SIZE       510
 
-// New lock acquired with SHARED when expecting to write.
-#define HINT_BYTE      (SHARED_FIRST+SHARED_SIZE)
+// This additional lock will be exclusively acquired when the
+// next SHARED lock is expected to eventually be upgraded to
+// RESERVED/EXCLUSIVE.
+#define HINT_BYTE         (SHARED_FIRST+SHARED_SIZE)
 
 /* Copied from os_unix.c */
 typedef struct unixFile unixFile;
@@ -195,6 +197,8 @@ static int shimFileSize(sqlite3_file *pFile, sqlite_int64 *pSize){
   return rc;
 }
 
+// Helper function for shimLock/shimUnlock to change the
+// state of a POSIX lock.
 static int doLock(int fd, int location, int state, int op) {
   assert(location == PENDING_BYTE ||
          location == SHARED_FIRST ||
@@ -262,6 +266,8 @@ static int shimLock(sqlite3_file *pFile, int eLock){
     break;
   case RESERVED_LOCK:
     if (up->eFileLock == SHARED_LOCK) {
+      // This is the only place that we poll for locks instead of
+      // blocking.
       if (!p->writeHint) {
         // We are upgrading the SHARED lock but we don't already have the
         // HINT byte. This shouldn't happen if SQLite provides the hint
@@ -363,6 +369,13 @@ static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
   ShimFile *p = (ShimFile *)pFile;
   
   switch (op) {
+  // The proposal is to have a dedicated file control opcode that
+  // indicates that the next SHARED lock will be upgraded to
+  // RESERVED/EXCLUSIVE. To simulate that, a `PRAGMA write_hint`
+  // is used. Note this doesn't work on the first transaction after
+  // opening a database because SQLite first does some housekeeping
+  // that locks and unlocks the database, which clears the
+  // writeHint state.
   case SQLITE_FCNTL_PRAGMA:
     if (!strcasecmp(((char **)pArg)[1], "write_hint")) {
       fprintf(stderr, "write_hint set\n");
