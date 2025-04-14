@@ -1,7 +1,8 @@
 /* Originally based on ext/misc/vfsstat.c */
 #include <assert.h>
-#include <stdio.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <string.h>
 #include <strings.h>
 #include <sqlite3ext.h>
@@ -209,6 +210,10 @@ static int doLock(int fd, int location, int state, int op) {
          state == F_UNLCK);
   assert(op == F_SETLKW || op == F_SETLK);
 
+  // RESERVED_BYTE and HINT_BYTE are always locked exclusively.
+  assert(location != RESERVED_BYTE || state != F_RDLCK);
+  assert(location != HINT_BYTE     || state != F_RDLCK);
+  
   struct flock lock = {
     state,
     SEEK_SET,
@@ -216,6 +221,28 @@ static int doLock(int fd, int location, int state, int op) {
     location == SHARED_FIRST ? SHARED_SIZE : 1
   };
   int rc = fcntl(fd, op, &lock);
+  if (rc) {
+    const char *locationName =
+      location == PENDING_BYTE  ? "shim PENDING"  :
+      location == SHARED_FIRST  ? "shim SHARED"   :
+      location == RESERVED_BYTE ? "shim RESERVED" :
+      location == HINT_BYTE     ? "shim HINT"     :
+      "unreachable";
+    
+    if (state == F_UNLCK) {
+      perror(locationName);
+    } else {
+      switch (errno) {
+      case EACCES:  // normal polling failure
+      case EAGAIN:  // normal polling failure
+      case EINTR:   // blocking lock interrupted by signal
+        break;
+      default:
+        perror(locationName);
+        break;
+      }
+    }
+  }
   return rc;
 }
 
