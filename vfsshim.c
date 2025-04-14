@@ -270,9 +270,9 @@ static int shimLock(sqlite3_file *pFile, int eLock){
       // blocking.
       if (!p->writeHint) {
         // We are upgrading the SHARED lock but we don't already have the
-        // HINT byte. This shouldn't happen if SQLite provides the hint
-        // (via a new file control opcode) but it may if we are relying
-        // on a `PRAGMA write_hint`. Poll for the HINT byte.
+        // HINT byte. This can happen if the write hint is not received
+        // prior to a write transaction, e.g. if BEGIN IMMEDIATE is not
+        // used. Poll for the HINT byte.
         if (doLock(fd, HINT_BYTE, F_WRLCK, F_SETLK)) {
           return SQLITE_BUSY;
         }
