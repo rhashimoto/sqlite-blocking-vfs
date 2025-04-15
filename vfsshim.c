@@ -2,9 +2,13 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/time.h>
+
 #include <sqlite3ext.h>
 SQLITE_EXTENSION_INIT1
 
@@ -200,6 +204,7 @@ static int shimFileSize(sqlite3_file *pFile, sqlite_int64 *pSize){
 
 // Helper function for shimLock/shimUnlock to change the
 // state of a POSIX lock.
+static long timeoutMillis = 0L;
 static int doLock(int fd, int location, int state, int op) {
   assert(location == PENDING_BYTE ||
          location == SHARED_FIRST ||
@@ -213,6 +218,18 @@ static int doLock(int fd, int location, int state, int op) {
   // RESERVED_BYTE and HINT_BYTE are always locked exclusively.
   assert(location != RESERVED_BYTE || state != F_RDLCK);
   assert(location != HINT_BYTE     || state != F_RDLCK);
+
+  if (op == F_SETLKW && timeoutMillis > 0) {
+    // Set a timer for this blocking request.
+    struct itimerval timer = {
+      .it_interval.tv_sec = 0,
+      .it_interval.tv_usec = 0,
+      .it_value.tv_sec = timeoutMillis / 1000,
+      .it_value.tv_usec = (timeoutMillis % 1000) * 1000
+    };
+    int rc = setitimer(ITIMER_REAL, &timer, NULL);
+    assert(!rc);
+  }
   
   struct flock lock = {
     state,
@@ -221,7 +238,21 @@ static int doLock(int fd, int location, int state, int op) {
     location == SHARED_FIRST ? SHARED_SIZE : 1
   };
   int rc = fcntl(fd, op, &lock);
+
+  if (op == F_SETLKW && timeoutMillis > 0) {
+    // Clear the timer.
+    struct itimerval timer = {
+      .it_interval.tv_sec = 0,
+      .it_interval.tv_usec = 0,
+      .it_value.tv_sec = 0,
+      .it_value.tv_usec = 0
+    };
+    int rc = setitimer(ITIMER_REAL, &timer, NULL);
+    assert(!rc);
+  }
+  
   if (rc) {
+    // Report unexpected locking failures.
     const char *locationName =
       location == PENDING_BYTE  ? "shim PENDING"  :
       location == SHARED_FIRST  ? "shim SHARED"   :
@@ -408,6 +439,18 @@ static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
     if (!strcasecmp(((char **)pArg)[1], "write_hint")) {
       fprintf(stderr, "write_hint set\n");
       p->writeHint = 1;
+    } else if (!strcasecmp(((char **)pArg)[1], "busy_timeout")) {
+      // Parse the timeout milliseconds value.
+      char *ptr = ((char **)pArg)[2];
+      char *endptr = NULL;
+      long value = strtol(ptr, &endptr, 10);
+      if (*ptr && !*endptr) {
+        timeoutMillis = value;
+      } else {
+        timeoutMillis = 0L;
+      }
+      fprintf(stderr, "timeout set to %d ms\n", timeoutMillis);
+      return SQLITE_OK;
     }
     break;
   case 90909: // TODO: replace with real opcode
@@ -567,11 +610,23 @@ static int shimCurrentTimeInt64(sqlite3_vfs *pVfs, sqlite3_int64 *p){
 __declspec(dllexport)
 #endif
 
+static void signalHandler(int) {
+  // Nothing needed here. The existence of the handler is sufficient
+  // to interrupt the blocking lock.
+}
+
 int DECLARE(SHIM_NAME)(
   sqlite3 *db, 
   char **pzErrMsg, 
   const sqlite3_api_routines *pApi
 ){
+  // Register a SIGALRM handler for lock timeout.
+  struct sigaction action;
+  memset(&action, 0, sizeof(struct sigaction));
+  action.sa_handler = signalHandler;
+  sigemptyset(&action.sa_mask);
+  sigaction(SIGALRM, &action, NULL);
+
   int rc = SQLITE_OK;
   SQLITE_EXTENSION_INIT2(pApi);
   shim_vfs.pVfs = sqlite3_vfs_find(0);
@@ -580,6 +635,7 @@ int DECLARE(SHIM_NAME)(
     fprintf(stderr, "%s: only wraps \"unix\"", QUOTE(SHIM_NAME));
     return SQLITE_ERROR;
   }
+
   shim_vfs.base.szOsFile = sizeof(ShimFile) + shim_vfs.pVfs->szOsFile;
   rc = sqlite3_vfs_register(&shim_vfs.base, 1);
   if( rc==SQLITE_OK ) rc = SQLITE_OK_LOAD_PERMANENTLY;
