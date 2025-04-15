@@ -394,6 +394,7 @@ static int shimCheckReservedLock(sqlite3_file *pFile, int *pResOut){
 
 static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
   ShimFile *p = (ShimFile *)pFile;
+  unixFile *up = (unixFile *)p->pReal;
   
   switch (op) {
   // The proposal is to have a dedicated file control opcode that
@@ -410,8 +411,10 @@ static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
     }
     break;
   case 90909: // TODO: replace with real opcode
-    fprintf(stderr, "write_hint set\n");
-    p->writeHint = 1;
+    if (up->eFileLock == NO_LOCK) {
+      fprintf(stderr, "write_hint set\n");
+      p->writeHint = 1;
+    }
     break;
   }
   
