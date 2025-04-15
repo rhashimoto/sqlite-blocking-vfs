@@ -409,6 +409,10 @@ static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
       p->writeHint = 1;
     }
     break;
+  case 90909: // TODO: replace with real opcode
+    fprintf(stderr, "write_hint set\n");
+    p->writeHint = 1;
+    break;
   }
   
   int rc = p->pReal->pMethods->xFileControl(p->pReal, op, pArg);
