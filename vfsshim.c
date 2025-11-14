@@ -251,7 +251,9 @@ static int shimLock(sqlite3_file *pFile, int eLock){
   ShimFile *p = (ShimFile *)pFile;
   unixFile *up = (unixFile *)p->pReal;
   int fd = up->h;
+#if SHIM_CHATTY  
   fprintf(stderr, "shimLock %p %d -> %d\n", pFile, up->eFileLock, eLock);
+#endif
   switch (eLock) {
   case SHARED_LOCK:
     if (up->eFileLock == NO_LOCK) {
@@ -270,7 +272,9 @@ static int shimLock(sqlite3_file *pFile, int eLock){
         if (p->writeHint) {
           doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
           p->writeHint = 0;
+#if SHIM_CHATTY
           fprintf(stderr, "write_hint cleared\n");
+#endif
         }
         return SQLITE_BUSY;
       }
@@ -282,7 +286,9 @@ static int shimLock(sqlite3_file *pFile, int eLock){
         if (p->writeHint) {
           doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
           p->writeHint = 0;
+#if SHIM_CHATTY
           fprintf(stderr, "write_hint cleared\n");
+#endif
         }
         return SQLITE_BUSY;
       }
@@ -314,7 +320,9 @@ static int shimLock(sqlite3_file *pFile, int eLock){
         if (p->writeHint) {
           doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
           p->writeHint = 0;
+#if SHIM_CHATTY
           fprintf(stderr, "write_hint cleared\n");
+#endif
         }
         return SQLITE_BUSY;
       }
@@ -348,7 +356,9 @@ static int shimUnlock(sqlite3_file *pFile, int eLock){
   ShimFile *p = (ShimFile *)pFile;
   unixFile *up = (unixFile *)p->pReal;
   int fd = up->h;
+#if SHIM_CHATTY
   fprintf(stderr, "shimUnlock %p %d -> %d\n", pFile, up->eFileLock, eLock);
+#endif
   if (eLock == up->eFileLock) return SQLITE_OK;
   switch (eLock) {
   case SHARED_LOCK:
@@ -362,7 +372,9 @@ static int shimUnlock(sqlite3_file *pFile, int eLock){
       if (p->writeHint) {
         doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
         p->writeHint = 0;
+#if SHIM_CHATTY
         fprintf(stderr, "write_hint cleared\n");
+#endif
       }
     }
     break;
@@ -375,7 +387,9 @@ static int shimUnlock(sqlite3_file *pFile, int eLock){
       if (p->writeHint) {
         doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
         p->writeHint = 0;
+#if SHIM_CHATTY
         fprintf(stderr, "write_hint cleared\n");
+#endif
       }
     }
     break;
@@ -406,13 +420,17 @@ static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
   // writeHint state.
   case SQLITE_FCNTL_PRAGMA:
     if (!strcasecmp(((char **)pArg)[1], "write_hint")) {
+#if SHIM_CHATTY
       fprintf(stderr, "write_hint set\n");
+#endif
       p->writeHint = 1;
     }
     break;
   case 90909: // TODO: replace with real opcode
     if (up->eFileLock == NO_LOCK) {
+#if SHIM_CHATTY
       fprintf(stderr, "write_hint set\n");
+#endif
       p->writeHint = 1;
     }
     break;
