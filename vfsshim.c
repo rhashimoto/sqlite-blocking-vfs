@@ -411,29 +411,28 @@ static int shimFileControl(sqlite3_file *pFile, int op, void *pArg){
   unixFile *up = (unixFile *)p->pReal;
   
   switch (op) {
-  // The proposal is to have a dedicated file control opcode that
-  // indicates that the next SHARED lock will be upgraded to
-  // RESERVED/EXCLUSIVE. To simulate that, a `PRAGMA write_hint`
-  // is used. Note this doesn't work on the first transaction after
-  // opening a database because SQLite first does some housekeeping
-  // that locks and unlocks the database, which clears the
-  // writeHint state.
+  // SQLite sends
+  //  PRAGMA experimental_pragma_20251114 = 1|2
+  // prior BEGIN IMMEDIATE or a standalone write statement.
+  // https://sqlite.org/src/info/e2b3f1a948
   case SQLITE_FCNTL_PRAGMA:
-    if (!strcasecmp(((char **)pArg)[1], "write_hint")) {
+    if (!strcasecmp(((char **)pArg)[1], "experimental_pragma_20251114")) {
 #if SHIM_CHATTY
       fprintf(stderr, "write_hint set\n");
 #endif
       p->writeHint = 1;
     }
     break;
-  case 90909: // TODO: replace with real opcode
-    if (up->eFileLock == NO_LOCK) {
-#if SHIM_CHATTY
-      fprintf(stderr, "write_hint set\n");
-#endif
-      p->writeHint = 1;
-    }
-    break;
+
+  // Hopefully SQLite will eventually have a file control opcode.
+/*   case SQLITE_FUTURE_WRITE_HINT_OPCODE: // TODO: replace with real opcode */
+/*     if (up->eFileLock == NO_LOCK) { */
+/* #if SHIM_CHATTY */
+/*       fprintf(stderr, "write_hint set\n"); */
+/* #endif */
+/*       p->writeHint = 1; */
+/*     } */
+/*     break; */
   }
   
   int rc = p->pReal->pMethods->xFileControl(p->pReal, op, pArg);
