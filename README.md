@@ -2,7 +2,7 @@
 SQLite has [created](https://sqlite.org/src/info/e2b3f1a9480a9be3)
 an experimental mechanism to inform a VFS that a write transaction will
 follow. This can be used by a VFS implementation to improve locking
-efficiency and behavior.
+efficiency and behavior. More background [here](https://github.com/rhashimoto/wa-sqlite/discussions/301).
 
 This feature requires SQLite to be built with the compile-time define
 `SQLITE_EXPERIMENTAL_PRAGMA_20251114`, e.g. when building from the
