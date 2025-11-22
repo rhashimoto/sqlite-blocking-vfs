@@ -1,0 +1,10 @@
+{
+  "name": "sqlite-blocking-vfs",
+  "version": "0.0.1",
+  "scripts": {
+    "start": "web-dev-server --watch"
+  },
+  "devDependencies": {
+    "@web/dev-server": "^0.4.6"
+  }
+}
