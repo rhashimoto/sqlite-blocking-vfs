@@ -1,0 +1,10 @@
+{
+  "exclude": [".yarn", "node_modules"],
+  "compilerOptions": {
+    "checkJs": true,
+    "target":"ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "lib": ["DOM", "ESNext", "WebWorker"]
+  }
+}

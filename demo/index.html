@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SQLite blocking experiment</title>
+  <style>
+    table {
+      border-collapse: collapse;
+    }
+
+    th, td {
+      border: 1px solid black;
+      padding: 8px;
+      text-align: left;
+    }
+
+    th {
+      background-color: lightblue;
+      font-weight: bold;
+    }
+
+    tbody tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+  </style>
+  <script type="module" src="./demo-window.js"></script>
+</head>
+<body>
+  <div>
+    <label for="contexts">Number of contexts:</label>
+    <select id="contexts" name="contexts">
+      <option value="1">1</option>
+      <option value="2" selected>2</option>
+      <option value="4">4</option>
+      <option value="8">8</option>
+    </select>
+  </div>
+  <div>
+    <button id="start">Start test</button>
+  </div>
+  <hr>
+  <div id="results"></div>
+</body>
+</html>

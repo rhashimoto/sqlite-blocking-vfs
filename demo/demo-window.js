@@ -1,0 +1,104 @@
+// @ts-ignore
+import * as Comlink from "https://unpkg.com/comlink/dist/esm/comlink.mjs";
+
+const TEST_DURATION_MS = 1_000;
+
+function syncSettings(key) {
+  const element = /** @type {HTMLSelectElement|HTMLInputElement} */
+    (document.getElementById(key));
+  const storedValue = sessionStorage.getItem(`demo-${key}`);
+  if (storedValue !== null) {
+    element.value = storedValue;
+  }
+  element.addEventListener('change', () => {
+    sessionStorage.setItem(`demo-${key}`, element.value);
+  });
+}
+syncSettings('contexts');
+
+document.getElementById('start').addEventListener('click', async event => {
+  const onFinally = [];
+  try {
+    (/** @type {HTMLButtonElement} */ (event.target)).disabled = true;
+    onFinally.push(() => {
+      (/** @type {HTMLButtonElement} */ (event.target)).disabled = false;
+    });
+
+    // Clear OPFS storage.
+    await navigator.storage.getDirectory().then(async dirHandle => {
+      // @ts-ignore
+      for await (const name of dirHandle.keys()) {
+        dirHandle.removeEntry(name, { recursive: true });
+      }
+    });
+
+    const nContexts = parseInt(/** @type {HTMLSelectElement} */ (document.getElementById('contexts')).value);
+
+    // Launch workers.
+    const proxies = [];
+    for (let i = 0; i < nContexts; i++) {
+      const worker = new Worker(`demo-worker.js?name=${i}`, { type: 'module' });
+      onFinally.push(() => worker.terminate());
+
+      const proxy = Comlink.wrap(worker);
+      proxies.push(proxy);
+      onFinally.push(() => proxy[Comlink.releaseProxy]());
+    }
+    await Promise.all(proxies.map((proxy, i) => proxy.prepare({ name: i })));
+
+    // Run test.
+    new BroadcastChannel('start-test').postMessage({
+      endTime: Date.now() + TEST_DURATION_MS
+    });
+    await Promise.all(proxies.map(proxy => proxy.complete()));
+    console.log('All workers have completed successfully');
+
+    // Get results
+    const results = await proxies[0].getResults();
+    const container = document.getElementById('results');
+    for (const result of results) {
+      renderTable(container, result);
+    }
+  } finally {
+    while (onFinally.length) {
+      try {
+        await onFinally.pop()();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
+  
+});
+
+/**
+ * @param {HTMLElement} parent 
+ * @param {{columns: string[], rows: any[][]}} data 
+ */
+function renderTable(parent, data) {
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const tbody = document.createElement('tbody');
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  parent.appendChild(table);
+
+  const headerRow = document.createElement('tr');
+  for (const column of data.columns) {
+    const th = document.createElement('th');
+    th.textContent = column;
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+
+  for (const row of data.rows) {
+    const tr = document.createElement('tr');
+    for (const value of row) {
+      const td = document.createElement('td');
+      td.textContent = `${value}`;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
