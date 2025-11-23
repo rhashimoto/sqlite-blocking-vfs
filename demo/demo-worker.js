@@ -3,6 +3,7 @@ import * as Comlink from "https://unpkg.com/comlink/dist/esm/comlink.mjs";
 import SQLiteESMFactory from '../wa-sqlite/dist/wa-sqlite-jspi.mjs';
 import * as SQLite from '../wa-sqlite/src/sqlite-api.js';
 import { OPFSBaseUnsafeVFS } from "./OPFSBaseUnsafeVFS.js";
+import { OPFSNoWriteHintVFS } from "./OPFSNoWriteHintVFS.js";
 
 /** @type {SQLiteAPI} */ let sqlite3;
 /** @type {number} */ let db;
@@ -30,7 +31,7 @@ class DemoWorker {
     const module = await SQLiteESMFactory();
     sqlite3 = SQLite.Factory(module);
 
-    const vfs = new OPFSBaseUnsafeVFS('opfs-unsafe', module);
+    const vfs = new OPFSNoWriteHintVFS('opfs-unsafe', module);
     sqlite3.vfs_register(vfs, true);
 
     db = await sqlite3.open_v2('blocking-demo.db');
@@ -102,9 +103,9 @@ class DemoWorker {
                 throw e;
               }
             } finally {
-              sqlite3.reset(this.beginImmediate);
-              sqlite3.reset(this.insert);
-              sqlite3.reset(this.commit);
+              await sqlite3.reset(this.beginImmediate).catch(() => {});
+              await sqlite3.reset(this.insert).catch(() => {});
+              await sqlite3.reset(this.commit).catch(() => {});
             }
           }
         }
