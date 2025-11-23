@@ -2,6 +2,7 @@
 import * as Comlink from "https://unpkg.com/comlink/dist/esm/comlink.mjs";
 import SQLiteESMFactory from '../wa-sqlite/dist/wa-sqlite-jspi.mjs';
 import * as SQLite from '../wa-sqlite/src/sqlite-api.js';
+import { OPFSBaseUnsafeVFS } from "./OPFSBaseUnsafeVFS.js";
 
 /** @type {SQLiteAPI} */ let sqlite3;
 /** @type {number} */ let db;
@@ -29,9 +30,10 @@ class DemoWorker {
     const module = await SQLiteESMFactory();
     sqlite3 = SQLite.Factory(module);
 
-    // TODO: register VFS
+    const vfs = new OPFSBaseUnsafeVFS('opfs-unsafe', module);
+    sqlite3.vfs_register(vfs, true);
 
-    db = await sqlite3.open_v2(':memory:');
+    db = await sqlite3.open_v2('blocking-demo.db');
 
     await this.query(`
       CREATE TABLE IF NOT EXISTS
