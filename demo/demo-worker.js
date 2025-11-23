@@ -8,7 +8,11 @@ import * as SQLite from '../wa-sqlite/src/sqlite-api.js';
 
 class DemoWorker {
   name;
-  
+
+  beginImmediate = 0;
+  insert = 0;
+  commit = 0;
+
   isComplete = new Promise((resolve, reject) => {
     addEventListener('complete', event => {
       if (event.detail instanceof Error) {
@@ -34,6 +38,14 @@ class DemoWorker {
         test(name TEXT, ticks INTEGER, remaining INTEGER, retries INTEGER)
     `);
 
+    // Pre-compile repeated statements.
+    this.beginImmediate = await prepare(`BEGIN IMMEDIATE`);
+    this.insert = await prepare(`
+      INSERT INTO test(name, ticks, remaining, retries)
+        VALUES(?, ?, ?, ?)
+    `);
+    this.commit = await prepare(`COMMIT`);
+
     new BroadcastChannel('start-test').onmessage = async ({ data }) => {
       const {
         endTime,
@@ -49,7 +61,7 @@ class DemoWorker {
           let isCommitted = false;
           while (!isCommitted) {
             try {
-              await this.query(`BEGIN IMMEDIATE`);
+              await sqlite3.step(this.beginImmediate);
 
               txTime = Date.now();
               if (txPadding) {
@@ -57,10 +69,12 @@ class DemoWorker {
                 await new Promise(resolve => setTimeout(resolve, txPadding));
               }
 
-              await this.query(`
-                INSERT INTO test(name, ticks, remaining, retries)
-                  VALUES('${this.name}', ${txTime}, ${endTime - txTime}, ${retries})`);
-              await this.query(`COMMIT`);
+              sqlite3.bind_collection(
+                this.insert,
+                [this.name, txTime, endTime - txTime, retries]);
+              await sqlite3.step(this.insert);
+
+              await sqlite3.step(this.commit);
               isCommitted = true;
             } catch (e) {
               if (e.code === SQLite.SQLITE_BUSY) {
@@ -71,6 +85,10 @@ class DemoWorker {
                 continue;
               }
               throw e;
+            } finally {
+              sqlite3.reset(this.beginImmediate);
+              sqlite3.reset(this.insert);
+              sqlite3.reset(this.commit);
             }
           }
         }
@@ -83,33 +101,44 @@ class DemoWorker {
     };
   }
 
+  /**
+   * @param {string} sql 
+   * @returns {Promise<{columns: string[], rows: SQLiteCompatibleType[][]}>}
+   */
   async query(sql) {
-    const results = [];
-    while (true) {
-      try {
-        await sqlite3.exec(db, sql, (row, columns) => {
-          if (columns != results.at(-1)?.columns) {
-            results.push({ columns, rows: [] });
+    const prepared = await prepare(sql);
+    try {
+      // Retry query until success or fatal exception.
+      while (true) {
+        try {
+          const rows = [];
+          while (await sqlite3.step(prepared) === SQLite.SQLITE_ROW) {
+            const row = sqlite3.row(prepared);
+            rows.push(row);
           }
-          results.at(-1).rows.push(row);
-        });
-        return results;
-      } catch (e) {
-        if (e.code === SQLite.SQLITE_BUSY) {
-          await new Promise(resolve => setTimeout(resolve));
-          continue;
+          return { columns: sqlite3.column_names(prepared), rows };
+        } catch (e) {
+          if (e.code === SQLite.SQLITE_BUSY) {
+            await new Promise(resolve => setTimeout(resolve));
+            continue;
+          }
+          throw e;
         }
-        throw e;
       }
+    } finally {
+      await finalize(prepared);
     }
   }
 
   async complete() {
-    return this.isComplete
+    await this.isComplete;
+    await finalize(this.beginImmediate);
+    await finalize(this.insert);
+    await finalize(this.commit);
   }
 
   async getResults() {
-    return this.query(`
+    const result = await this.query(`
       SELECT
         name,
         COUNT() AS transactions,
@@ -117,7 +146,29 @@ class DemoWorker {
       FROM test
       GROUP BY name
       ORDER BY name`);
+    return [result];
   }
 }
-
 Comlink.expose(new DemoWorker());
+
+// Convenience functions for persistent prepared statements.
+const mapStatementToFinalizer = new Map();
+
+/**
+ * @param {string} sql 
+ * @return {Promise<number>}
+ */
+async function prepare(sql) {
+    const iterator = sqlite3.statements(db, sql)[Symbol.asyncIterator]();
+    const statement = await iterator.next();
+    mapStatementToFinalizer.set(statement.value, () => iterator.return());
+    return statement.value;
+}
+
+/**
+ * @param {number} statement 
+ */
+async function finalize(statement) {
+    await mapStatementToFinalizer.get(statement)?.();
+    mapStatementToFinalizer.delete(statement);
+}
