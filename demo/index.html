@@ -6,6 +6,7 @@
   <style>
     table {
       border-collapse: collapse;
+      margin-top: 1em;
     }
 
     th, td {
@@ -21,6 +22,10 @@
 
     tbody tr:nth-child(even) {
       background-color: #f9f9f9;
+    }
+
+    progress {
+      width: 100%;
     }
   </style>
   <script type="module" src="./demo-window.js"></script>
@@ -38,7 +43,7 @@
   <div>
     <button id="start">Start test</button>
   </div>
-  <hr>
+  <progress value="0"></progress>
   <div id="results"></div>
 </body>
 </html>

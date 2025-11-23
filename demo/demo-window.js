@@ -2,6 +2,7 @@
 import * as Comlink from "https://unpkg.com/comlink/dist/esm/comlink.mjs";
 
 const TEST_DURATION_MS = 1_000;
+const PROGRESS_UPDATE_MS = 100;
 
 function syncSettings(key) {
   const element = /** @type {HTMLSelectElement|HTMLInputElement} */
@@ -19,6 +20,7 @@ syncSettings('contexts');
 document.getElementById('start').addEventListener('click', async event => {
   const onFinally = [];
   try {
+    // Debounce the start button.
     (/** @type {HTMLButtonElement} */ (event.target)).disabled = true;
     onFinally.push(() => {
       (/** @type {HTMLButtonElement} */ (event.target)).disabled = false;
@@ -46,14 +48,27 @@ document.getElementById('start').addEventListener('click', async event => {
     }
     await Promise.all(proxies.map((proxy, i) => proxy.prepare({ name: i })));
 
-    // Run test.
+    // Start test.
+    const startTime = Date.now();
+    const endTime = startTime + TEST_DURATION_MS;
     new BroadcastChannel('start-test').postMessage({
-      endTime: Date.now() + TEST_DURATION_MS
+      endTime
     });
-    await Promise.all(proxies.map(proxy => proxy.complete()));
-    console.log('All workers have completed successfully');
 
-    // Get results
+    // Update progress bar.
+    const progress = /** @type {HTMLProgressElement} */ (document.querySelector('progress'));
+    let progressInterval = setInterval(() => {
+      const now = Date.now();
+      progress.value = (now - startTime) / TEST_DURATION_MS;
+      if (now >= endTime) {
+        clearInterval(progressInterval);
+      }
+    }, PROGRESS_UPDATE_MS);
+
+    // Wait for all workers to finish.
+    await Promise.all(proxies.map(proxy => proxy.complete()));
+
+    // Get results from one worker.
     const results = await proxies[0].getResults();
     const container = document.getElementById('results');
     for (const result of results) {
