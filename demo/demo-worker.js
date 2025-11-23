@@ -41,8 +41,7 @@ class DemoWorker {
     // Pre-compile repeated statements.
     this.beginImmediate = await prepare(`BEGIN IMMEDIATE`);
     this.insert = await prepare(`
-      INSERT INTO test(name, ticks, remaining, retries)
-        VALUES(?, ?, ?, ?)
+      INSERT INTO test(name, ticks, remaining, retries) VALUES(?, ?, ?, ?)
     `);
     this.commit = await prepare(`COMMIT`);
 
@@ -57,15 +56,25 @@ class DemoWorker {
         // Send transactions until past endTime.
         let txTime = 0;
         while (txTime < endTime) {
+          // Repeat a transaction until it commits or time has expired.
           let retries = 0;
-          let isCommitted = false;
-          while (!isCommitted) {
+          while (true) {
             try {
               await sqlite3.step(this.beginImmediate);
 
+              // We have the lock but are we still within the time window?
+              // If time has expired, abandon this transaction.
               txTime = Date.now();
+              if (txTime >= endTime) {
+                await this.query('ROLLBACK');
+                break;
+              }
+
               if (txPadding) {
-                // Simulate a longer transaction.
+                // The chance of deadlock increases with time spent in the
+                // RESERVED state, which could be from database reads,
+                // database computations, or application code. Add a delay
+                // here to simulate a more complex transaction.
                 await new Promise(resolve => setTimeout(resolve, txPadding));
               }
 
@@ -75,16 +84,21 @@ class DemoWorker {
               await sqlite3.step(this.insert);
 
               await sqlite3.step(this.commit);
-              isCommitted = true;
+              break;
             } catch (e) {
               if (e.code === SQLite.SQLITE_BUSY) {
+                // Applications should rollback if within a multi-statement
+                // transaction. Here we know that is not the case because
+                // we used BEGIN IMMEDIATE, so rollback is not needed, just
+                // retry. 
                 retries++;
                 if (retryDelay) {
                   await new Promise(resolve => setTimeout(resolve, retryDelay));
                 }
-                continue;
+              } else {
+                // This is not an error that rollback and retry can fix.
+                throw e;
               }
-              throw e;
             } finally {
               sqlite3.reset(this.beginImmediate);
               sqlite3.reset(this.insert);
