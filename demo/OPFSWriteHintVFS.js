@@ -12,6 +12,10 @@ import { Lock } from "./Lock.js";
  * @property {string} [writeHint]
  */
 
+/**
+ * This VFS extends OPFSBaseUnsafeVFS by adding locking with the
+ * experimental write hint.
+ */
 export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
   constructor(name, module) {
     super(name, module);

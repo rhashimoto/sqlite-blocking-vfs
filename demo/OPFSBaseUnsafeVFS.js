@@ -12,11 +12,13 @@ import * as VFS from '../wa-sqlite/src/VFS.js';
 /** @type {FileSystemDirectoryHandle} */
 let dirHandle = null;
 
-// This is a minimal OPFS VFS implementation that uses unsafe access handles
-// for concurrent read-write access (currently supported only in Chromium
-// browsers). It does not implement any locking, so it is not safe to use
-// with multiple database connections unless the application implements
-// appropriate locking at a higher level.
+/**
+ * This is a minimal OPFS VFS implementation that uses unsafe access
+ * handles for concurrent read-write access (currently supported only
+ * in Chromium browsers). It does not implement any locking, so it is
+ * not safe to use with multiple database connections unless the
+ * application implements appropriate locking at a higher level.
+ */
 export class OPFSBaseUnsafeVFS extends FacadeVFS  {
   lastError = null;
   // log = console.log;

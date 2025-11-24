@@ -10,6 +10,10 @@ import { Lock } from "./Lock.js";
  * @property {Lock} pendingLock
  */
 
+/**
+ * This VFS extends OPFSBaseUnsafeVFS by implementing the standard
+ * SQLite locking protocol using the Web Locks API (without write hint).
+ */
 export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
   constructor(name, module) {
     super(name, module);
