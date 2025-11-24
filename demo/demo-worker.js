@@ -4,6 +4,7 @@ import SQLiteESMFactory from '../wa-sqlite/dist/wa-sqlite-jspi.mjs';
 import * as SQLite from '../wa-sqlite/src/sqlite-api.js';
 import { OPFSBaseUnsafeVFS } from "./OPFSBaseUnsafeVFS.js";
 import { OPFSNoWriteHintVFS } from "./OPFSNoWriteHintVFS.js";
+import { OPFSWriteHintVFS } from "./OPFSWriteHintVFS.js";
 
 /** @type {SQLiteAPI} */ let sqlite3;
 /** @type {number} */ let db;
@@ -31,20 +32,20 @@ class DemoWorker {
     const module = await SQLiteESMFactory();
     sqlite3 = SQLite.Factory(module);
 
-    const vfs = new OPFSNoWriteHintVFS('opfs-unsafe', module);
+    const vfs = new OPFSWriteHintVFS('opfs-unsafe', module);
     sqlite3.vfs_register(vfs, true);
 
     db = await sqlite3.open_v2('blocking-demo.db');
 
     await this.query(`
       CREATE TABLE IF NOT EXISTS
-        test(name TEXT, ticks INTEGER, remaining INTEGER, retries INTEGER)
+        test(worker TEXT, ticks INTEGER, remaining INTEGER, retries INTEGER)
     `);
 
     // Pre-compile repeated statements.
     this.beginImmediate = await prepare(`BEGIN IMMEDIATE`);
     this.insert = await prepare(`
-      INSERT INTO test(name, ticks, remaining, retries) VALUES(?, ?, ?, ?)
+      INSERT INTO test(worker, ticks, remaining, retries) VALUES(?, ?, ?, ?)
     `);
     this.commit = await prepare(`COMMIT`);
 
@@ -157,12 +158,12 @@ class DemoWorker {
   async getResults() {
     const result = await this.query(`
       SELECT
-        name,
+        worker,
         COUNT() AS transactions,
         SUM(retries) AS retries
       FROM test
-      GROUP BY name
-      ORDER BY name`);
+      GROUP BY worker
+      ORDER BY worker`);
     return [result];
   }
 }

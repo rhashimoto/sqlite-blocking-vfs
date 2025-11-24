@@ -1,4 +1,4 @@
-
+// This is convenience wrapper for the Web Locks API.
 export class Lock {
   #name;
   #releaser = null;
@@ -9,16 +9,15 @@ export class Lock {
 
   /**
    * @param {'shared'|'exclusive'} mode 
-   * @param {number} timeout 
-   * @return {Promise<boolean>}
+   * @param {number} timeout -1 for infinite, 0 for poll, >0 for milliseconds
+   * @return {Promise<boolean>} true if lock acquired, false on timeout
    */
   async acquire(mode, timeout = -1) {
     if (this.#releaser) {
       throw new Error(`Lock ${this.#name} is already acquired`);
     }
-    return new Promise(async (resolve, reject) => {
-      // Set up locking options. Include timeout signal if a timeout
-      // is specified.
+    return new Promise((resolve, reject) => {
+      /** @type {LockOptions} */
       const options = { mode, ifAvailable: timeout === 0 };
       let timeoutId;
       if (timeout > 0) {
@@ -32,11 +31,12 @@ export class Lock {
       navigator.locks.request(this.#name, options, lock => {
         if (timeoutId) clearTimeout(timeoutId);
         if (lock === null) {
-          // Polling (with timeout = 0) failed to acquire the lock.
+          // Polling (with timeout = 0) did not acquire the lock.
           return resolve(false);
         }
 
-        // Lock acquired.
+        // Lock acquired. The lock is released when this returned
+        // Promise is resolved.
         return new Promise(releaser => {
           this.#releaser = releaser;
           resolve(true);
