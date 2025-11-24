@@ -10,7 +10,7 @@ import { OPFSWriteHintVFS } from "./OPFSWriteHintVFS.js";
 /** @type {number} */ let db;
 
 class DemoWorker {
-  name;
+  name = new URL(self.location.href).searchParams.get('name');
 
   beginImmediate = 0;
   insert = 0;
@@ -27,12 +27,23 @@ class DemoWorker {
   });
   
   async prepare(config) {
-    this.name = config.name;
-
     const module = await SQLiteESMFactory();
     sqlite3 = SQLite.Factory(module);
 
-    const vfs = new OPFSWriteHintVFS('opfs-unsafe', module);
+    let vfs;
+    switch (config.locking) {
+      case 'none':
+        vfs = new OPFSBaseUnsafeVFS('opfs-unsafe', module);
+        break;
+      case 'standard':
+        vfs = new OPFSNoWriteHintVFS('opfs-unsafe', module);
+        break;
+      case 'write-hint':
+        vfs = new OPFSWriteHintVFS('opfs-unsafe', module);
+        break;
+      default:
+        throw new Error(`Unknown locking policy: ${config.locking}`);
+    }
     sqlite3.vfs_register(vfs, true);
 
     db = await sqlite3.open_v2('blocking-demo.db');
@@ -50,11 +61,7 @@ class DemoWorker {
     this.commit = await prepare(`COMMIT`);
 
     new BroadcastChannel('start-test').onmessage = async ({ data }) => {
-      const {
-        endTime,
-        txPadding,
-        retryDelay,
-      } = data;
+      const { endTime } = data;
 
       try {
         // Send transactions until past endTime.
@@ -74,12 +81,12 @@ class DemoWorker {
                 break;
               }
 
-              if (txPadding) {
+              if (config.txnDelay > 0) {
                 // The chance of deadlock increases with time spent in the
                 // RESERVED state, which could be from database reads,
                 // database computations, or application code. Add a delay
                 // here to simulate a more complex transaction.
-                await new Promise(resolve => setTimeout(resolve, txPadding));
+                await new Promise(resolve => setTimeout(resolve, config.txnDelay));
               }
 
               sqlite3.bind_collection(
@@ -96,8 +103,8 @@ class DemoWorker {
                 // we used BEGIN IMMEDIATE, so rollback is not needed, just
                 // retry. 
                 retries++;
-                if (retryDelay) {
-                  await new Promise(resolve => setTimeout(resolve, retryDelay));
+                if (config.retryDelay) {
+                  await new Promise(resolve => setTimeout(resolve, config.retryDelay));
                 }
               } else {
                 // This is not an error that rollback and retry can fix.

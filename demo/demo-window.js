@@ -1,7 +1,7 @@
 // @ts-ignore
 import * as Comlink from "https://unpkg.com/comlink/dist/esm/comlink.mjs";
 
-const TEST_DURATION_MS = 1_000;
+const TEST_DURATION_MS = 10_000;
 const PROGRESS_UPDATE_MS = 100;
 
 function syncSettings(key) {
@@ -16,6 +16,9 @@ function syncSettings(key) {
   });
 }
 syncSettings('contexts');
+syncSettings('locking');
+syncSettings('retry');
+syncSettings('work');
 
 document.getElementById('start').addEventListener('click', async event => {
   const onFinally = [];
@@ -46,13 +49,19 @@ document.getElementById('start').addEventListener('click', async event => {
       proxies.push(proxy);
       onFinally.push(() => proxy[Comlink.releaseProxy]());
     }
-    await Promise.all(proxies.map((proxy, i) => proxy.prepare({ name: i })));
+
+    const config = {
+      locking: /** @type {HTMLSelectElement} */ (document.getElementById('locking')).value,
+      retryDelay: parseInt(/** @type {HTMLSelectElement} */ (document.getElementById('retry')).value),
+      txnDelay: parseInt(/** @type {HTMLSelectElement} */ (document.getElementById('work')).value)
+    }
+    await Promise.all(proxies.map((proxy, i) => proxy.prepare(config)));
 
     // Start test.
     const startTime = Date.now();
     const endTime = startTime + TEST_DURATION_MS;
     new BroadcastChannel('start-test').postMessage({
-      endTime
+      endTime,
     });
 
     // Update progress bar.
