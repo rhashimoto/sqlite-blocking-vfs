@@ -23,6 +23,9 @@ syncSettings('work');
 document.getElementById('start').addEventListener('click', async event => {
   const onFinally = [];
   try {
+    // Clear workers from previous run.
+    new BroadcastChannel('terminate').postMessage(null);
+
     // Debounce the start button.
     (/** @type {HTMLButtonElement} */ (event.target)).disabled = true;
     onFinally.push(() => {
@@ -43,7 +46,6 @@ document.getElementById('start').addEventListener('click', async event => {
     const proxies = [];
     for (let i = 0; i < nContexts; i++) {
       const worker = new Worker(`demo-worker.js?name=${i}`, { type: 'module' });
-      onFinally.push(() => worker.terminate());
 
       const proxy = Comlink.wrap(worker);
       proxies.push(proxy);

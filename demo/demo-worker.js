@@ -6,6 +6,9 @@ import { OPFSBaseUnsafeVFS } from "./OPFSBaseUnsafeVFS.js";
 import { OPFSNoWriteHintVFS } from "./OPFSNoWriteHintVFS.js";
 import { OPFSWriteHintVFS } from "./OPFSWriteHintVFS.js";
 
+// Self-terminate on command.
+new BroadcastChannel('terminate').onmessage = () => close();
+
 /** @type {SQLiteAPI} */ let sqlite3;
 /** @type {number} */ let db;
 
@@ -48,7 +51,7 @@ class DemoWorker {
 
     db = await sqlite3.open_v2('blocking-demo.db');
 
-    await this.query(`
+    await query(`
       CREATE TABLE IF NOT EXISTS
         test(worker TEXT, ticks NUMERIC, wait NUMERIC, retries INTEGER)
     `);
@@ -78,7 +81,7 @@ class DemoWorker {
               // If time has expired, abandon this transaction.
               txTime = performance.now() + performance.timeOrigin;
               if (txTime >= endTime) {
-                await this.query('ROLLBACK');
+                await query('ROLLBACK');
                 break;
               }
 
@@ -126,35 +129,6 @@ class DemoWorker {
     };
   }
 
-  /**
-   * @param {string} sql 
-   * @returns {Promise<{columns: string[], rows: SQLiteCompatibleType[][]}>}
-   */
-  async query(sql) {
-    const prepared = await prepare(sql);
-    try {
-      // Retry query until success or fatal exception.
-      while (true) {
-        try {
-          const rows = [];
-          while (await sqlite3.step(prepared) === SQLite.SQLITE_ROW) {
-            const row = sqlite3.row(prepared);
-            rows.push(row);
-          }
-          return { columns: sqlite3.column_names(prepared), rows };
-        } catch (e) {
-          if (e.code === SQLite.SQLITE_BUSY) {
-            await new Promise(resolve => setTimeout(resolve));
-            continue;
-          }
-          throw e;
-        }
-      }
-    } finally {
-      await finalize(prepared);
-    }
-  }
-
   async complete() {
     await this.isComplete;
     await finalize(this.beginImmediate);
@@ -163,7 +137,7 @@ class DemoWorker {
   }
 
   async getResults() {
-    const result = await this.query(`
+    const result = await query(`
       WITH EnhancedEvents AS (
           SELECT 
               worker,
@@ -210,4 +184,44 @@ async function prepare(sql) {
 async function finalize(statement) {
     await mapStatementToFinalizer.get(statement)?.();
     mapStatementToFinalizer.delete(statement);
+}
+
+  /**
+   * @param {string} sql 
+   * @returns {Promise<{columns: string[], rows: SQLiteCompatibleType[][]}>}
+   */
+  async function query(sql) {
+    const prepared = await prepare(sql);
+    try {
+      // Retry query until success or fatal exception.
+      while (true) {
+        try {
+          const rows = [];
+          while (await sqlite3.step(prepared) === SQLite.SQLITE_ROW) {
+            const row = sqlite3.row(prepared);
+            rows.push(row);
+          }
+          return { columns: sqlite3.column_names(prepared), rows };
+        } catch (e) {
+          if (e.code === SQLite.SQLITE_BUSY) {
+            await new Promise(resolve => setTimeout(resolve));
+            continue;
+          }
+          throw e;
+        }
+      }
+    } finally {
+      await finalize(prepared);
+    }
+  }
+
+/**
+ * Query function for console debugging.
+ * @param {string} sql 
+ */  
+self['q'] = async function(sql) {
+  const result = await query(sql);
+  console.table(result.rows.map(row => {
+    return Object.fromEntries(result.columns.map((col, i) => [col, row[i]]));
+  }));
 }
