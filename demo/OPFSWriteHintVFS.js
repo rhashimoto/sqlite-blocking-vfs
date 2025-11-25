@@ -62,10 +62,12 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
                 if (!await file.extra.writeHintLock.acquire('exclusive', timeout)) {
                   return VFS.SQLITE_BUSY; // reached only on timeout
                 }
-              }
-              if (!await accessLock.acquire('shared', timeout)) {
-                file.extra.writeHintLock.release();
-                return VFS.SQLITE_BUSY; // reached only on timeout
+                await accessLock.acquire('shared');
+              } else {
+                if (!await accessLock.acquire('shared', timeout)) {
+                  file.extra.writeHintLock.release();
+                  return VFS.SQLITE_BUSY; // reached only on timeout
+                }
               }
               break;
             default:
