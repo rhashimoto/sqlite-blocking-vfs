@@ -133,6 +133,16 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
           file.extra.writeHint = null;
           break;
         case VFS.SQLITE_LOCK_SHARED:
+          // If the current lock state is EXCLUSIVE, technically we should
+          // downgrade accessLock from exclusive to shared. However, this is
+          // expensive because it requires releasing and reacquiring the lock,
+          // plus that forces this method to be async.
+          //
+          // Most of the time the lock state will subsequently transition to
+          // NONE, which releases accessLock anyway. The exceptions are when
+          // dealing with unexpected journal file states. In those rare cases,
+          // leaving accessLock as exclusive prevents read concurrency during
+          // that transaction but is otherwise harmless.
           reservedLock.release();
           break;
         default:
