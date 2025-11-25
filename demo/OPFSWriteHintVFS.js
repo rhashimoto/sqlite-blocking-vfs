@@ -7,9 +7,9 @@ import { Lock } from "./Lock.js";
  * @property {number} lockState
  * @property {Lock} accessLock
  * @property {Lock} reservedLock
- * @property {Lock} pendingLock
+ * 
+ * @property {string?} writeHint
  * @property {Lock} writeHintLock
- * @property {string} [writeHint]
  */
 
 /**
@@ -36,8 +36,7 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
         lockState: VFS.SQLITE_LOCK_NONE,
         accessLock: new Lock(`OPFSWriteHint-${filename}-access`),
         reservedLock: new Lock(`OPFSWriteHint-${filename}-reserved`),
-        pendingLock: new Lock(`OPFSWriteHint-${filename}-pending`),
-        writeHintLock: new Lock(`OPFSWriteHint-${filename}-writehint`),
+        writeHintLock: new Lock(`OPFSWriteHint-${filename}-writehint`)
       }
     }
     return rc;
@@ -51,28 +50,23 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
   async jLock(fileId, lockType) {
     try {
       const file = this.mapFileIdToEntry.get(fileId);
-      const { accessLock, reservedLock, pendingLock, writeHintLock } =
-        /** @type {LockState} */ (file.extra);
+      if (lockType === file.extra.lockState) return VFS.SQLITE_OK;
+
+      const { accessLock, reservedLock } = /** @type {LockState} */ (file.extra);
       const timeout = -1; // TODO: Make configurable.
       switch (file.extra.lockState) {
         case VFS.SQLITE_LOCK_NONE:
           switch (lockType) {
             case VFS.SQLITE_LOCK_SHARED:
               if (file.extra.writeHint) {
-                // The write hint tells us this will be a write transaction.
-                // One writer at a time will be admitted here.
-                if (!await writeHintLock.acquire('exclusive', timeout)) {
-                  return VFS.SQLITE_BUSY; // Timeout
+                if (!await file.extra.writeHintLock.acquire('exclusive', timeout)) {
+                  return VFS.SQLITE_BUSY; // reached only on timeout
                 }
               }
-
-              if (!await pendingLock.acquire('shared', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
-              };
               if (!await accessLock.acquire('shared', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
+                file.extra.writeHintLock.release();
+                return VFS.SQLITE_BUSY; // reached only on timeout
               }
-              pendingLock.release();             
               break;
             default:
               throw new Error(`Invalid lock transition ${file.extra.lockState} to ${lockType}`);
@@ -80,53 +74,33 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
           break;
         case VFS.SQLITE_LOCK_SHARED:
           switch (lockType) {
-            case VFS.SQLITE_LOCK_SHARED:
-              break;
             case VFS.SQLITE_LOCK_RESERVED:
               if (!file.extra.writeHint) {
-                // We didn't get a write hint because a BEGIN DEFERRED
-                // transaction was used. Poll for it now.
-                if (!await writeHintLock.acquire('exclusive', 0)) {
-                  // Deadlock.
+                // This is a write transaction without a write hint, i.e.
+                // a write statement within BEGIN DEFERRED. 
+                if (!await file.extra.writeHintLock.acquire('exclusive', 0)) {
                   return VFS.SQLITE_BUSY;
                 }
               }
 
-              // This poll should always succeed.
-              if (!await reservedLock.acquire('exclusive', 0)) {
-                // Deadlock.
-                writeHintLock.release();
-                return VFS.SQLITE_BUSY;
-              }
+              // The reserved lock is guaranteed to be available here.
+              await reservedLock.acquire('exclusive');
               break;
             case VFS.SQLITE_LOCK_EXCLUSIVE:
-              if (!await pendingLock.acquire('exclusive', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
-              }
               if (!await accessLock.acquire('exclusive', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
+                return VFS.SQLITE_BUSY; // reached only on timeout
               }
               break;
-            default:
-              throw new Error(`Invalid lock transition ${file.extra.lockState} to ${lockType}`);
           }
           break;
         case VFS.SQLITE_LOCK_RESERVED:
           switch (lockType) {
-            case VFS.SQLITE_LOCK_RESERVED:
-              break;
             case VFS.SQLITE_LOCK_EXCLUSIVE:
-              if (!await pendingLock.acquire('exclusive', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
-              }
               accessLock.release();
               if (!await accessLock.acquire('exclusive', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
+                return VFS.SQLITE_BUSY; // reached only on timeout
               }
-              pendingLock.release();
               break;
-            default:
-              throw new Error(`Invalid lock transition ${file.extra.lockState} to ${lockType}`);
           }
           break;
       }
@@ -147,22 +121,22 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
     try {
       const file = this.mapFileIdToEntry.get(fileId);
       if (lockType === file.extra.lockState) return VFS.SQLITE_OK;
-      const { accessLock, reservedLock, writeHintLock } = /** @type {LockState} */ (file.extra);
+
+      const { accessLock, reservedLock } = /** @type {LockState} */ (file.extra);
       switch (lockType) {
         case VFS.SQLITE_LOCK_NONE:
           reservedLock.release();
-          writeHintLock.release();
           accessLock.release();
+          file.extra.writeHintLock.release();
+          file.extra.writeHint = null;
           break;
         case VFS.SQLITE_LOCK_SHARED:
           reservedLock.release();
-          writeHintLock.release();
           break;
         default:
           throw new Error(`Invalid unlock transition ${file.extra.lockState} to ${lockType}`);
       }
       file.extra.lockState = lockType;
-      file.extra.writeHint = null;
       return VFS.SQLITE_OK;
     } catch (e) {
       this.lastError = e;

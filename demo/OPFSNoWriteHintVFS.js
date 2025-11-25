@@ -7,7 +7,6 @@ import { Lock } from "./Lock.js";
  * @property {number} lockState
  * @property {Lock} accessLock
  * @property {Lock} reservedLock
- * @property {Lock} pendingLock
  */
 
 /**
@@ -33,8 +32,7 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
       file.extra = /** @type {LockState} */ {
         lockState: VFS.SQLITE_LOCK_NONE,
         accessLock: new Lock(`OPFSNoWriteHint-${filename}-access`),
-        reservedLock: new Lock(`OPFSNoWriteHint-${filename}-reserved`),
-        pendingLock: new Lock(`OPFSNoWriteHint-${filename}-pending`),
+        reservedLock: new Lock(`OPFSNoWriteHint-${filename}-reserved`)
       }
     }
     return rc;
@@ -48,19 +46,17 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
   async jLock(fileId, lockType) {
     try {
       const file = this.mapFileIdToEntry.get(fileId);
-      const { accessLock, reservedLock, pendingLock } = /** @type {LockState} */ (file.extra);
+      if (lockType === file.extra.lockState) return VFS.SQLITE_OK;
+
+      const { accessLock, reservedLock } = /** @type {LockState} */ (file.extra);
       const timeout = -1; // TODO: Make configurable.
       switch (file.extra.lockState) {
         case VFS.SQLITE_LOCK_NONE:
           switch (lockType) {
             case VFS.SQLITE_LOCK_SHARED:
-              if (!await pendingLock.acquire('shared', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
-              };
               if (!await accessLock.acquire('shared', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
+                return VFS.SQLITE_BUSY; // reached only on timeout
               }
-              pendingLock.release();             
               break;
             default:
               throw new Error(`Invalid lock transition ${file.extra.lockState} to ${lockType}`);
@@ -68,42 +64,28 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
           break;
         case VFS.SQLITE_LOCK_SHARED:
           switch (lockType) {
-            case VFS.SQLITE_LOCK_SHARED:
-              break;
             case VFS.SQLITE_LOCK_RESERVED:
+              // Poll for the reserved lock. This is the only place where
+              // we poll instead of block.
               if (!await reservedLock.acquire('exclusive', 0)) {
-                // Deadlock.
-                return VFS.SQLITE_BUSY;
+                return VFS.SQLITE_BUSY; // deadlock detected
               }
               break;
             case VFS.SQLITE_LOCK_EXCLUSIVE:
-              if (!await pendingLock.acquire('exclusive', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
-              }
               if (!await accessLock.acquire('exclusive', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
+                return VFS.SQLITE_BUSY; // reached only on timeout
               }
               break;
-            default:
-              throw new Error(`Invalid lock transition ${file.extra.lockState} to ${lockType}`);
           }
           break;
         case VFS.SQLITE_LOCK_RESERVED:
           switch (lockType) {
-            case VFS.SQLITE_LOCK_RESERVED:
-              break;
             case VFS.SQLITE_LOCK_EXCLUSIVE:
-              if (!await pendingLock.acquire('exclusive', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
-              }
               accessLock.release();
               if (!await accessLock.acquire('exclusive', timeout)) {
-                return VFS.SQLITE_BUSY; // Timeout
+                return VFS.SQLITE_BUSY; // reached only on timeout
               }
-              pendingLock.release();
               break;
-            default:
-              throw new Error(`Invalid lock transition ${file.extra.lockState} to ${lockType}`);
           }
           break;
       }
@@ -124,6 +106,7 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
     try {
       const file = this.mapFileIdToEntry.get(fileId);
       if (lockType === file.extra.lockState) return VFS.SQLITE_OK;
+
       const { accessLock, reservedLock } = /** @type {LockState} */ (file.extra);
       switch (lockType) {
         case VFS.SQLITE_LOCK_NONE:
