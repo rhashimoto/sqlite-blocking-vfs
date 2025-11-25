@@ -75,7 +75,7 @@ class DemoWorker {
 
               // We have the lock but are we still within the time window?
               // If time has expired, abandon this transaction.
-              txTime = Date.now();
+              txTime = performance.now() + performance.timeOrigin;
               if (txTime >= endTime) {
                 await this.query('ROLLBACK');
                 break;

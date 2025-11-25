@@ -58,7 +58,7 @@ document.getElementById('start').addEventListener('click', async event => {
     await Promise.all(proxies.map((proxy, i) => proxy.prepare(config)));
 
     // Start test.
-    const startTime = Date.now();
+    const startTime = performance.now() + performance.timeOrigin;
     const endTime = startTime + TEST_DURATION_MS;
     new BroadcastChannel('start-test').postMessage({
       endTime,
@@ -67,7 +67,7 @@ document.getElementById('start').addEventListener('click', async event => {
     // Update progress bar.
     const progress = /** @type {HTMLProgressElement} */ (document.querySelector('progress'));
     let progressInterval = setInterval(() => {
-      const now = Date.now();
+      const now = performance.now() + performance.timeOrigin;
       progress.value = (now - startTime) / TEST_DURATION_MS;
       if (now >= endTime) {
         clearInterval(progressInterval);
