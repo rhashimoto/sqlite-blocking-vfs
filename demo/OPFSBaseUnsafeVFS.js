@@ -3,13 +3,15 @@ import * as VFS from '../wa-sqlite/src/VFS.js';
 
 /**
  * @typedef FileEntry
- * @property {number} flags
  * @property {FileSystemSyncAccessHandle} accessHandle
- * @property {() => Promise<void>?} onDelete
+ * @property {() => Promise<void>?} onClose
  * @property {any} [extra]
  */
 
-/** @type {FileSystemDirectoryHandle} */
+/**
+ * Cache the OPFS root directory handle.
+ * @type {FileSystemDirectoryHandle}
+ */
 let dirHandle = null;
 
 /**
@@ -38,18 +40,20 @@ export class OPFSBaseUnsafeVFS extends FacadeVFS  {
    */
   async jOpen(filename, fileId, flags, pOutFlags) {
     try {
+      // For simplicity, everything goes into the OPFS root directory.
       dirHandle = dirHandle ?? await navigator.storage.getDirectory();
       const fileHandle = await dirHandle.getFileHandle(
         filename,
         { create: (flags & VFS.SQLITE_OPEN_CREATE) === VFS.SQLITE_OPEN_CREATE });
+
+      // Open a synchronous access handle with concurrent access.
       // @ts-ignore
       const accessHandle = await fileHandle.createSyncAccessHandle({
         mode: 'readwrite-unsafe'
       });
       this.mapFileIdToEntry.set(fileId, {
-        flags,
         accessHandle,
-        onDelete: (flags & VFS.SQLITE_OPEN_DELETEONCLOSE) ?
+        onClose: (flags & VFS.SQLITE_OPEN_DELETEONCLOSE) ?
           () => dirHandle.removeEntry(filename, { recursive: false }) :
           null,
       });
@@ -107,7 +111,7 @@ export class OPFSBaseUnsafeVFS extends FacadeVFS  {
       const file = this.mapFileIdToEntry.get(fileId);
       this.mapFileIdToEntry.delete(fileId);
       file?.accessHandle.close();
-      file?.onDelete?.();
+      file?.onClose?.();
       return VFS.SQLITE_OK;
     } catch (e) {
       return VFS.SQLITE_IOERR_DELETE;
