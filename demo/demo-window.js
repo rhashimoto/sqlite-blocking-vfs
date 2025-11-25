@@ -74,12 +74,17 @@ document.getElementById('start').addEventListener('click', async event => {
       }
     }, PROGRESS_UPDATE_MS);
 
+    const container = document.getElementById('results');
+    const description = document.createElement('p');
+    description.classList.add('description');
+    description.textContent = JSON.stringify(config);
+    container.appendChild(description);
+
     // Wait for all workers to finish.
     await Promise.all(proxies.map(proxy => proxy.complete()));
 
     // Get results from one worker.
     const results = await proxies[0].getResults();
-    const container = document.getElementById('results');
     for (const result of results) {
       renderTable(container, result);
     }

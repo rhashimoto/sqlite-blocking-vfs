@@ -50,13 +50,13 @@ class DemoWorker {
 
     await this.query(`
       CREATE TABLE IF NOT EXISTS
-        test(worker TEXT, ticks INTEGER, remaining INTEGER, retries INTEGER)
+        test(worker TEXT, ticks NUMERIC, wait NUMERIC, retries INTEGER)
     `);
 
     // Pre-compile repeated statements.
     this.beginImmediate = await prepare(`BEGIN IMMEDIATE`);
     this.insert = await prepare(`
-      INSERT INTO test(worker, ticks, remaining, retries) VALUES(?, ?, ?, ?)
+      INSERT INTO test(worker, ticks, wait, retries) VALUES(?, ?, ?, ?)
     `);
     this.commit = await prepare(`COMMIT`);
 
@@ -69,6 +69,7 @@ class DemoWorker {
         while (txTime < endTime) {
           // Repeat a transaction until it commits or time has expired.
           let retries = 0;
+          const requestTime = performance.now() + performance.timeOrigin;
           while (true) {
             try {
               await sqlite3.step(this.beginImmediate);
@@ -91,7 +92,7 @@ class DemoWorker {
 
               sqlite3.bind_collection(
                 this.insert,
-                [this.name, txTime, endTime - txTime, retries]);
+                [this.name, txTime, txTime - requestTime, retries]);
               await sqlite3.step(this.insert);
 
               await sqlite3.step(this.commit);
@@ -118,7 +119,6 @@ class DemoWorker {
           }
         }
 
-        console.log(`Worker ${this.name} completed work at ${Date.now()}`);
         dispatchEvent(new CustomEvent('complete'));
       } catch (e) {
         dispatchEvent(new CustomEvent('complete', { detail: e }));
@@ -164,13 +164,27 @@ class DemoWorker {
 
   async getResults() {
     const result = await this.query(`
-      SELECT
-        worker,
-        COUNT() AS transactions,
-        SUM(retries) AS retries
-      FROM test
+      WITH EnhancedEvents AS (
+          SELECT 
+              worker,
+              wait,
+              retries,
+              -- Calculate the difference from the previous rowid immediately
+              rowid - LAG(rowid) OVER (PARTITION BY worker ORDER BY rowid) AS slot_diff
+          FROM test
+      )
+      SELECT 
+          worker,
+          COUNT(*) AS transactions,
+          AVG(wait) AS "avg wait",
+          MAX(wait) AS "max wait",
+          SUM(retries) AS retries,
+          MIN(slot_diff) AS "min slots",
+          MAX(slot_diff) AS "max slots"
+      FROM EnhancedEvents
       GROUP BY worker
-      ORDER BY worker`);
+      ORDER BY worker;
+    `);
     return [result];
   }
 }
