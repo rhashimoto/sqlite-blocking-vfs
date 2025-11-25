@@ -36,7 +36,18 @@ document.getElementById('start').addEventListener('click', async event => {
     await navigator.storage.getDirectory().then(async dirHandle => {
       // @ts-ignore
       for await (const name of dirHandle.keys()) {
-        dirHandle.removeEntry(name, { recursive: true });
+        while (true) {
+          try {
+            await dirHandle.removeEntry(name, { recursive: true });
+            break;
+          } catch (e) {
+            if (e.name === 'NoModificationAllowedError') {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              continue;
+            }
+            throw e;
+          }          
+        }
       }
     });
 
