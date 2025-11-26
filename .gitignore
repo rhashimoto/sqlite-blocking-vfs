@@ -1,3 +1,14 @@
 *.o
 *.so
 sqlite*/
+
+# Yarn without Zero-Installs
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+# Ensure node_modules is ignored
+/**/node_modules

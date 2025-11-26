@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SQLite blocking experiment</title>
+  <style>
+    table {
+      border-collapse: collapse;
+      margin-bottom: 1em;
+    }
+
+    th, td {
+      border: 1px solid black;
+      padding: 8px;
+      text-align: left;
+    }
+
+    th {
+      background-color: lightblue;
+      font-weight: bold;
+    }
+
+    tbody tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+
+    progress {
+      width: 100%;
+    }
+
+    .description {
+      margin-block: 1em 0;
+    }
+  </style>
+  <script type="module" src="./demo-window.js"></script>
+</head>
+<body>
+  <p>
+    This test requires a browser that supports JSPI and the OPFS
+    readwrite-unsafe access handle mode, which are all Chromium-based
+    browsers as of this writing. The code is available
+    <a href="https://github.com/rhashimoto/sqlite-blocking-vfs/tree/web/demo">here</a>.
+  </p>
+
+  <div>
+    <label for="contexts">Number of workers:</label>
+    <select id="contexts" name="contexts">
+      <option value="1">1</option>
+      <option value="2" selected>2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+    </select>
+  </div>
+  <div>
+    <label for="locking">Locking implementation:</label>
+    <select id="locking" name="locking">
+      <option value="none">No locking (1 worker only)</option>
+      <option value="standard">Standard locking</option>
+      <option value="write-hint" selected>Experimental write hint</option>
+    </select>
+  </div>
+  <div>
+    <label for="retry">Retry delay (ms):</label>
+    <select id="retry" name="retry">
+      <option value="0">0</option>
+      <option value="1">1</option>
+      <option value="2" selected>2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+      <option value="9">9</option>
+      <option value="10">10</option>
+      <option value="11">11</option>
+      <option value="12">12</option>
+      <option value="13">13</option>
+      <option value="14">14</option>
+      <option value="15">15</option>
+      <option value="16">16</option>
+      <option value="17">17</option>
+      <option value="18">18</option>
+      <option value="19">19</option>
+      <option value="20">20</option>
+    </select>
+  </div>
+  <div>
+    <label for="work">Simulated work (ms):</label>
+    <select id="work" name="work">
+      <option value="0" selected>0</option>
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+      <option value="9">9</option>
+      <option value="10">10</option>
+      <option value="11">11</option>
+      <option value="12">12</option>
+      <option value="13">13</option>
+      <option value="14">14</option>
+      <option value="15">15</option>
+      <option value="16">16</option>
+      <option value="17">17</option>
+      <option value="18">18</option>
+      <option value="19">19</option>
+      <option value="20">20</option>
+    </select>
+  </div>
+  <div>
+    <button id="start">Start test</button>
+  </div>
+  <progress value="0"></progress>
+  <div id="results"></div>
+</body>
+</html>
