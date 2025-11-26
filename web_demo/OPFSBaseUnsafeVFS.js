@@ -114,7 +114,7 @@ export class OPFSBaseUnsafeVFS extends FacadeVFS  {
       file?.onClose?.();
       return VFS.SQLITE_OK;
     } catch (e) {
-      return VFS.SQLITE_IOERR_DELETE;
+      return VFS.SQLITE_IOERR_CLOSE;
     }
   }
 

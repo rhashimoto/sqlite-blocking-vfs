@@ -67,7 +67,6 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
                 await accessLock.acquire('shared');
               } else {
                 if (!await accessLock.acquire('shared', timeout)) {
-                  file.extra.writeHintLock.release();
                   return VFS.SQLITE_BUSY; // reached only on timeout
                 }
               }
@@ -170,7 +169,7 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
 
       // Try to acquire the reserved lock ourselves. Request shared mode
       // so we don't interfere with other jCheckReservedLock callers.
-      if (reservedLock.acquire('shared', 0)) {
+      if (await reservedLock.acquire('shared', 0)) {
         // We got the lock so there is no exclusive holder.
         reservedLock.release();
         pResOut.setInt32(0, 0, true);

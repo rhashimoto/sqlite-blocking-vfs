@@ -1,6 +1,6 @@
 # Experimental write hint test web app
 This web app compares VFS locking implementations for SQLite, including use of the
-[experimental write hint]([url](https://sqlite.org/forum/forumpost/c4ca8e7f4a887aa4)).
+[experimental write hint](https://sqlite.org/forum/forumpost/c4ca8e7f4a887aa4).
 It uses both [WebAssembly JSPI](https://github.com/WebAssembly/js-promise-integration)
 and [OPFS readwrite-unsafe mode](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemFileHandle/createSyncAccessHandle#readwrite-unsafe),
 which currently are only available in Chromium-based browsers. The web app can be

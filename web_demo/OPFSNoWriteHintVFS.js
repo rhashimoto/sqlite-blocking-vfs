@@ -151,7 +151,7 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
 
       // Try to acquire the reserved lock ourselves. Request shared mode
       // so we don't interfere with other jCheckReservedLock callers.
-      if (reservedLock.acquire('shared', 0)) {
+      if (await reservedLock.acquire('shared', 0)) {
         // We got the lock so there is no exclusive holder.
         reservedLock.release();
         pResOut.setInt32(0, 0, true);
