@@ -1,4 +1,4 @@
 [submodule "wa-sqlite"]
-	path = wa-sqlite
+	path = web_demo/wa-sqlite
 	url = https://github.com/rhashimoto/wa-sqlite
 	branch = SQLITE_EXPERIMENTAL_PRAGMA_20251114

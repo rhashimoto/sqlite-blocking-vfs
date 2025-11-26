@@ -1,5 +1,5 @@
-import { FacadeVFS } from "../wa-sqlite/src/FacadeVFS.js";
-import * as VFS from '../wa-sqlite/src/VFS.js';
+import { FacadeVFS } from "./wa-sqlite/src/FacadeVFS.js";
+import * as VFS from './wa-sqlite/src/VFS.js';
 
 /**
  * @typedef FileEntry

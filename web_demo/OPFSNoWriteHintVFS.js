@@ -1,4 +1,4 @@
-import * as VFS from '../wa-sqlite/src/VFS.js';
+import * as VFS from './wa-sqlite/src/VFS.js';
 import { OPFSBaseUnsafeVFS } from "./OPFSBaseUnsafeVFS.js";
 import { Lock } from "./Lock.js";
 
@@ -7,17 +7,14 @@ import { Lock } from "./Lock.js";
  * @property {number} lockState
  * @property {Lock} accessLock
  * @property {Lock} reservedLock
- * 
- * @property {string?} writeHint
- * @property {Lock} writeHintLock
  * @property {number} timeout
  */
 
 /**
- * This VFS extends OPFSBaseUnsafeVFS by adding locking with the
- * experimental write hint.
+ * This VFS extends OPFSBaseUnsafeVFS by implementing the standard
+ * SQLite locking protocol using the Web Locks API (without write hint).
  */
-export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
+export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
   constructor(name, module) {
     super(name, module);
   }
@@ -35,9 +32,8 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
       const file = this.mapFileIdToEntry.get(fileId);
       file.extra = /** @type {LockState} */ {
         lockState: VFS.SQLITE_LOCK_NONE,
-        accessLock: new Lock(`OPFSWriteHint-${filename}-access`),
-        reservedLock: new Lock(`OPFSWriteHint-${filename}-reserved`),
-        writeHintLock: new Lock(`OPFSWriteHint-${filename}-writehint`),
+        accessLock: new Lock(`OPFSNoWriteHint-${filename}-access`),
+        reservedLock: new Lock(`OPFSNoWriteHint-${filename}-reserved`),
         timeout: -1
       }
     }
@@ -60,16 +56,8 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
         case VFS.SQLITE_LOCK_NONE:
           switch (lockType) {
             case VFS.SQLITE_LOCK_SHARED:
-              if (file.extra.writeHint) {
-                if (!await file.extra.writeHintLock.acquire('exclusive', timeout)) {
-                  return VFS.SQLITE_BUSY; // reached only on timeout
-                }
-                await accessLock.acquire('shared');
-              } else {
-                if (!await accessLock.acquire('shared', timeout)) {
-                  file.extra.writeHintLock.release();
-                  return VFS.SQLITE_BUSY; // reached only on timeout
-                }
+              if (!await accessLock.acquire('shared', timeout)) {
+                return VFS.SQLITE_BUSY; // reached only on timeout
               }
               break;
             default:
@@ -79,16 +67,11 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
         case VFS.SQLITE_LOCK_SHARED:
           switch (lockType) {
             case VFS.SQLITE_LOCK_RESERVED:
-              if (!file.extra.writeHint) {
-                // This is a write transaction without a write hint, i.e.
-                // a write statement within BEGIN DEFERRED. 
-                if (!await file.extra.writeHintLock.acquire('exclusive', 0)) {
-                  return VFS.SQLITE_BUSY;
-                }
+              // Poll for the reserved lock. This is the only place where
+              // we poll instead of block.
+              if (!await reservedLock.acquire('exclusive', 0)) {
+                return VFS.SQLITE_BUSY; // deadlock detected
               }
-
-              // The reserved lock is guaranteed to be available here.
-              await reservedLock.acquire('exclusive');
               break;
             case VFS.SQLITE_LOCK_EXCLUSIVE:
               if (!await accessLock.acquire('exclusive', timeout)) {
@@ -131,8 +114,6 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
         case VFS.SQLITE_LOCK_NONE:
           reservedLock.release();
           accessLock.release();
-          file.extra.writeHintLock.release();
-          file.extra.writeHint = null;
           break;
         case VFS.SQLITE_LOCK_SHARED:
           // If the current lock state is EXCLUSIVE, technically we should
@@ -199,9 +180,6 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
           const valueAddress = pArg.getUint32(8, true);
           const value = valueAddress ? extractString(pArg, valueAddress) : null;
           switch (key.toLowerCase()) {
-            case 'experimental_pragma_20251114':
-              file.extra.writeHint = value;
-              break;
             case 'busy_timeout':
               if (value !== null) {
                 file.extra.timeout = parseInt(value);

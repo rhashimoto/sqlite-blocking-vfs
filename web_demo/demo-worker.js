@@ -1,7 +1,7 @@
 // @ts-ignore
 import * as Comlink from "https://unpkg.com/comlink/dist/esm/comlink.mjs";
-import SQLiteESMFactory from '../wa-sqlite/dist/wa-sqlite-jspi.mjs';
-import * as SQLite from '../wa-sqlite/src/sqlite-api.js';
+import SQLiteESMFactory from './wa-sqlite/dist/wa-sqlite-jspi.mjs';
+import * as SQLite from './wa-sqlite/src/sqlite-api.js';
 import { OPFSBaseUnsafeVFS } from "./OPFSBaseUnsafeVFS.js";
 import { OPFSNoWriteHintVFS } from "./OPFSNoWriteHintVFS.js";
 import { OPFSWriteHintVFS } from "./OPFSWriteHintVFS.js";
