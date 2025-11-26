@@ -35,6 +35,8 @@ Here are the lock modes for each locking state:
 
 \* The reserved lock must be polled and SQLITE_BUSY returned on failure. All other lock requests may be blocking.
 
+This *is* a blocking VFS - it blocks on the transition to the SHARED and EXCLUSIVE states. However, it cannot block on the transition to the RESERVED state as this would leave the system in deadlock.
+
 ### OPFSWriteHintVFS
 Using the write hint requires adding another lock, the write hint lock. When the write hint has been received, the lock modes are:
 |locking state|write hint lock|access lock|reserved lock|
@@ -56,6 +58,8 @@ When the write hint has not been received, the lock modes are:
 |EXCLUSIVE|exclusive (keep previous state)|exclusive|(keep previous state)|
 
 \* The write hint lock must be polled and SQLITE_BUSY returned on failure. All other lock requests may be blocking.
+
+This is a fully blocking VFS, made possible with the write hint. It blocks on the transition to every state and will never return SQLITE_BUSY except on an application-requested timeout.
 
 ## Test description
 The test creates one or more workers, with each worker executing as many write transactions as it can in a fixed amount of time. Each transaction inserts one row into a table with these columns:
