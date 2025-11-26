@@ -4,7 +4,7 @@ This web app compares VFS locking implementations for SQLite, including use of t
 It uses both [WebAssembly JSPI](https://github.com/WebAssembly/js-promise-integration)
 and [OPFS readwrite-unsafe mode](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemFileHandle/createSyncAccessHandle#readwrite-unsafe),
 which currently are only available in Chromium-based browsers. The web app can be
-loaded from [here](https://rhashimoto.github.io/sqlite-blocking-vfs/demo/).
+loaded from [here](https://rhashimoto.github.io/sqlite-blocking-vfs/web_demo/).
 
 ## Notable files
 * *demo-worker.js* - runs SQLite code.
