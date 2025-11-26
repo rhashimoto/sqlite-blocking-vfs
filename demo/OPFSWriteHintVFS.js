@@ -10,6 +10,7 @@ import { Lock } from "./Lock.js";
  * 
  * @property {string?} writeHint
  * @property {Lock} writeHintLock
+ * @property {number} timeout
  */
 
 /**
@@ -36,7 +37,8 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
         lockState: VFS.SQLITE_LOCK_NONE,
         accessLock: new Lock(`OPFSWriteHint-${filename}-access`),
         reservedLock: new Lock(`OPFSWriteHint-${filename}-reserved`),
-        writeHintLock: new Lock(`OPFSWriteHint-${filename}-writehint`)
+        writeHintLock: new Lock(`OPFSWriteHint-${filename}-writehint`),
+        timeout: -1
       }
     }
     return rc;
@@ -53,7 +55,7 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
       if (lockType === file.extra.lockState) return VFS.SQLITE_OK;
 
       const { accessLock, reservedLock } = /** @type {LockState} */ (file.extra);
-      const timeout = -1; // TODO: Make configurable.
+      const timeout = file.extra.timeout;
       switch (file.extra.lockState) {
         case VFS.SQLITE_LOCK_NONE:
           switch (lockType) {
@@ -193,12 +195,20 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
       const file = this.mapFileIdToEntry.get(pFile);
       switch (op) {
         case VFS.SQLITE_FCNTL_PRAGMA:
-          const key = extractString(pArg, 4);
-          const value = extractString(pArg, 8);
+          const key = extractString(pArg, pArg.getUint32(4, true));
+          const valueAddress = pArg.getUint32(8, true);
+          const value = valueAddress ? extractString(pArg, valueAddress) : null;
           switch (key.toLowerCase()) {
             case 'experimental_pragma_20251114':
               file.extra.writeHint = value;
               break;
+            case 'busy_timeout':
+              if (value !== null) {
+                file.extra.timeout = parseInt(value);
+              } else {
+                // TODO: Return current timeout.
+              }
+              return VFS.SQLITE_OK;
           }
       }
     } catch (e) {
@@ -209,11 +219,12 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
   }
 }
 
-function extractString(dataView, offset) {
-  const p = dataView.getUint32(offset, true);
-  if (p) {
-    const chars = new Uint8Array(dataView.buffer, p);
-    return new TextDecoder().decode(chars.subarray(0, chars.indexOf(0)));
-  }
-  return null;
+/**
+ * @param {DataView} dataView 
+ * @param {number} p 
+ * @returns {string}
+ */
+function extractString(dataView, p) {
+  const chars = new Uint8Array(dataView.buffer, p);
+  return new TextDecoder().decode(chars.subarray(0, chars.indexOf(0)));
 }

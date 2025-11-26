@@ -7,6 +7,7 @@ import { Lock } from "./Lock.js";
  * @property {number} lockState
  * @property {Lock} accessLock
  * @property {Lock} reservedLock
+ * @property {number} timeout
  */
 
 /**
@@ -32,7 +33,8 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
       file.extra = /** @type {LockState} */ {
         lockState: VFS.SQLITE_LOCK_NONE,
         accessLock: new Lock(`OPFSNoWriteHint-${filename}-access`),
-        reservedLock: new Lock(`OPFSNoWriteHint-${filename}-reserved`)
+        reservedLock: new Lock(`OPFSNoWriteHint-${filename}-reserved`),
+        timeout: -1
       }
     }
     return rc;
@@ -49,7 +51,7 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
       if (lockType === file.extra.lockState) return VFS.SQLITE_OK;
 
       const { accessLock, reservedLock } = /** @type {LockState} */ (file.extra);
-      const timeout = -1; // TODO: Make configurable.
+      const timeout = file.extra.timeout;
       switch (file.extra.lockState) {
         case VFS.SQLITE_LOCK_NONE:
           switch (lockType) {
@@ -162,4 +164,45 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
       return VFS.SQLITE_IOERR_CHECKRESERVEDLOCK;
     }
   }
+
+  /**
+   * @param {number} pFile
+   * @param {number} op
+   * @param {DataView} pArg
+   * @returns {number|Promise<number>}
+   */
+  jFileControl(pFile, op, pArg) {
+    try {
+      const file = this.mapFileIdToEntry.get(pFile);
+      switch (op) {
+        case VFS.SQLITE_FCNTL_PRAGMA:
+          const key = extractString(pArg, pArg.getUint32(4, true));
+          const valueAddress = pArg.getUint32(8, true);
+          const value = valueAddress ? extractString(pArg, valueAddress) : null;
+          switch (key.toLowerCase()) {
+            case 'busy_timeout':
+              if (value !== null) {
+                file.extra.timeout = parseInt(value);
+              } else {
+                // TODO: Return current timeout.
+              }
+              return VFS.SQLITE_OK;
+          }
+      }
+    } catch (e) {
+      this.lastError = e;
+      return VFS.SQLITE_IOERR;
+    }
+    return VFS.SQLITE_NOTFOUND;
+  }
+}
+
+/**
+ * @param {DataView} dataView 
+ * @param {number} p 
+ * @returns {string}
+ */
+function extractString(dataView, p) {
+  const chars = new Uint8Array(dataView.buffer, p);
+  return new TextDecoder().decode(chars.subarray(0, chars.indexOf(0)));
 }
