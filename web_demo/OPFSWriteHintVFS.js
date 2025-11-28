@@ -213,6 +213,11 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
                 pArg.setUint32(0, ptr, true);
               }
               return VFS.SQLITE_OK;
+            case 'vfs_logging':
+              if (value !== null) {
+                this.log = parseInt(value) !== 0 ? console.log : null;
+              }
+              return VFS.SQLITE_OK;
           }
       }
     } catch (e) {
