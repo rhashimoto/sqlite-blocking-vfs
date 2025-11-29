@@ -62,6 +62,7 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
             case VFS.SQLITE_LOCK_SHARED:
               if (file.extra.writeHint) {
                 if (!await file.extra.writeHintLock.acquire('exclusive', timeout)) {
+                  file.extra.writeHint = null;
                   return VFS.SQLITE_BUSY; // reached only on timeout
                 }
                 await accessLock.acquire('shared');
@@ -206,10 +207,9 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
                 file.extra.timeout = parseInt(value);
               } else {
                 // Return current timeout.
-                const encoded = new TextEncoder().encode(file.extra.timeout.toString());
-                const ptr = this._module._sqlite3_malloc64(encoded.byteLength + 1);
-                this._module.HEAPU8.set(encoded, ptr);
-                this._module.HEAPU8[ptr + encoded.byteLength] = 0;
+                const s = file.extra.timeout.toString();
+                const ptr = this._module._sqlite3_malloc64(s.length + 1);
+                this._module.stringToUTF8(file.extra.timeout.toString(), ptr, s.length + 1);
                 pArg.setUint32(0, ptr, true);
               }
               return VFS.SQLITE_OK;
