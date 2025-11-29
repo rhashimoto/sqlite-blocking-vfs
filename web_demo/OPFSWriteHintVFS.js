@@ -207,7 +207,7 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
                 // Return current timeout.
                 const s = file.extra.timeout.toString();
                 const ptr = this._module._sqlite3_malloc64(s.length + 1);
-                this._module.stringToUTF8(file.extra.timeout.toString(), ptr, s.length + 1);
+                this._module.stringToUTF8(s, ptr, s.length + 1);
                 pArg.setUint32(0, ptr, true);
               }
               return VFS.SQLITE_OK;
