@@ -220,8 +220,15 @@ async function finalize(statement) {
  * @param {string} sql 
  */  
 self['q'] = async function(sql) {
-  const result = await query(sql);
-  console.table(result.rows.map(row => {
-    return Object.fromEntries(result.columns.map((col, i) => [col, row[i]]));
-  }));
+  for await (const stmt of sqlite3.statements(db, sql)) {
+    let columns = null;
+    const objects = [];
+    while (await sqlite3.step(stmt) === SQLite.SQLITE_ROW) {
+      columns = columns ?? sqlite3.column_names(stmt);
+      const row = sqlite3.row(stmt);
+      const object = Object.fromEntries(columns.map((col, i) => [col, row[i]]));
+      objects.push(object);
+    }
+    console.table(objects);
+  }
 }
