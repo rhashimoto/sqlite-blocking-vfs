@@ -124,8 +124,6 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
   jUnlock(fileId, lockType) {
     try {
       const file = this.mapFileIdToEntry.get(fileId);
-      if (lockType === file.extra.lockState) return VFS.SQLITE_OK;
-
       const { accessLock, reservedLock } = /** @type {LockState} */ (file.extra);
       switch (lockType) {
         case VFS.SQLITE_LOCK_NONE:
