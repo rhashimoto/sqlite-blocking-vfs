@@ -262,6 +262,10 @@ static int shimLock(sqlite3_file *pFile, int eLock){
         // expected to be upgraded to RESERVED and EXCLUSIVE.
         // Acquire the HINT byte.
         if (doLock(fd, HINT_BYTE, F_WRLCK, F_SETLKW)) {
+          p->writeHint = 0;
+#if SHIM_CHATTY
+          fprintf(stderr, "write_hint cleared\n");
+#endif
           return SQLITE_BUSY;
         }
       }
@@ -365,17 +369,7 @@ static int shimUnlock(sqlite3_file *pFile, int eLock){
     if (up->eFileLock > eLock) {
       // Downgrade the SHARED range to a read lock.
       doLock(fd, SHARED_FIRST, F_RDLCK, F_SETLK);
-
-      // Release all other locks.
-      doLock(fd, RESERVED_BYTE, F_UNLCK, F_SETLK);
       doLock(fd, PENDING_BYTE, F_UNLCK, F_SETLK);
-      if (p->writeHint) {
-        doLock(fd, HINT_BYTE, F_UNLCK, F_SETLK);
-        p->writeHint = 0;
-#if SHIM_CHATTY
-        fprintf(stderr, "write_hint cleared\n");
-#endif
-      }
     }
     break;
   case NO_LOCK:
