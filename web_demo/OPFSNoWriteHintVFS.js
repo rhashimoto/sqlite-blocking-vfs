@@ -74,6 +74,10 @@ export class OPFSNoWriteHintVFS extends OPFSBaseUnsafeVFS  {
               }
               break;
             case VFS.SQLITE_LOCK_EXCLUSIVE:
+              // This transition, SHARED -> EXCLUSIVE (without RESERVED),
+              // happens when a hot journal is present and must be played
+              // back.
+              accessLock.release();
               if (!await accessLock.acquire('exclusive', timeout)) {
                 return VFS.SQLITE_BUSY; // reached only on timeout
               }
