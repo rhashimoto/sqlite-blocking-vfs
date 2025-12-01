@@ -38,7 +38,7 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
         accessLock: new Lock(`OPFSWriteHint-${filename}-access`),
         reservedLock: new Lock(`OPFSWriteHint-${filename}-reserved`),
         writeHintLock: new Lock(`OPFSWriteHint-${filename}-writehint`),
-        timeout: -1
+        timeout: -1  // block indefinitely by default
       }
     }
     return rc;
@@ -61,6 +61,12 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
           switch (lockType) {
             case VFS.SQLITE_LOCK_SHARED:
               if (file.extra.writeHint) {
+                // This is the key change with the write hint. Only one
+                // connection declaring a write can enter the SHARED state
+                // at a time. This is implemented with an additional lock.
+                // This can't be done simply by acquiring the reservedLock
+                // here because that would interfere with identifying a
+                // hot journal during jCheckReservedLock.
                 if (!await file.extra.writeHintLock.acquire('exclusive', timeout)) {
                   file.extra.writeHint = null;
                   return VFS.SQLITE_BUSY; // reached only on timeout
@@ -81,7 +87,10 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
             case VFS.SQLITE_LOCK_RESERVED:
               if (!file.extra.writeHint) {
                 // This is a write transaction without a write hint, i.e.
-                // a write statement within BEGIN DEFERRED. 
+                // a write statement within BEGIN DEFERRED. Try to get the
+                // write hint lock here, but if that fails this is deadlock
+                // and the application must rollback and retry. That is the
+                // penalty for not using the write hint.
                 if (!await file.extra.writeHintLock.acquire('exclusive', 0)) {
                   return VFS.SQLITE_BUSY;
                 }
@@ -177,6 +186,7 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
         reservedLock.release();
         pResOut.setInt32(0, 0, true);
       } else {
+        // Could not get the lock, so there is an exclusive holder.
         pResOut.setInt32(0, 1, true);
       }
       return VFS.SQLITE_OK;
