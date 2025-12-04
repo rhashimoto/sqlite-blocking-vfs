@@ -212,9 +212,15 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
           const value = valueAddress ? extractString(pArg, valueAddress) : null;
           switch (key.toLowerCase()) {
             case 'experimental_pragma_20251114':
+              // After entering the SHARED locking state on the next
+              // transaction, SQLite intends to immediately (barring a hot
+              // journal) transition to RESERVED if value is '1', or
+              // EXCLUSIVE if value is '2'.
               file.extra.writeHint = value;
               break;
             case 'busy_timeout':
+              // Override SQLite's handling of busy timeouts with our
+              // blocking lock timeouts.
               if (value !== null) {
                 file.extra.timeout = parseInt(value);
               } else {
@@ -225,7 +231,28 @@ export class OPFSWriteHintVFS extends OPFSBaseUnsafeVFS  {
                 pArg.setUint32(0, ptr, true);
               }
               return VFS.SQLITE_OK;
+            case 'locking_mode':
+              switch (value?.toLowerCase()) {
+                case 'exclusive':
+                  // Set the write hint to prevent deadlock if the first
+                  // statement in exclusive mode is a read. Because of the
+                  // way SQLite exclusive mode works (not actually exclusive
+                  // until a write occurs), starting with a read is like
+                  // BEGIN DEFERRED.
+                  file.extra.writeHint = '1';
+                  break;
+                case 'normal':
+                  // The only reason for this is if
+                  // PRAGMA locking_mode=EXCLUSIVE is followed by
+                  // PRAGMA locking_mode=NORMAL with no database operations
+                  // in between. Leaving this out wouldn't cause an error,
+                  // only a potential loss of concurrency for one transaction.
+                  file.extra.writeHint = null;
+                  break;
+              }
+              break;
             case 'vfs_logging':
+              // This is a trace feature for debugging only.
               if (value !== null) {
                 this.log = parseInt(value) !== 0 ? console.log : null;
               }
