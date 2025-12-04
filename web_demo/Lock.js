@@ -1,5 +1,7 @@
-// This is convenience wrapper for the Web Locks API.
+// This is a convenience wrapper for the Web Locks API.
 export class Lock {
+  /** @type {LockMode?} */ mode = null;
+  
   #name;
   #releaser = null;
 
@@ -37,6 +39,7 @@ export class Lock {
 
         // Lock acquired. The lock is released when this returned
         // Promise is resolved.
+        this.mode = mode;
         return new Promise(releaser => {
           this.#releaser = releaser;
           resolve(true);
@@ -54,5 +57,6 @@ export class Lock {
   release() {
     this.#releaser?.();
     this.#releaser = null;
+    this.mode = null;
   }
 }
